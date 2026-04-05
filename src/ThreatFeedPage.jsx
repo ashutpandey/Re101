@@ -68,11 +68,27 @@ function isWithinOneWeek(dateStr) {
 }
 
 async function fetchRSSviaProxy(feedUrl) {
-  const proxy = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&count=20`;
-  const res = await fetch(proxy);
-  const data = await res.json();
-  const items = data.items || [];
-  return items.filter(item => isWithinOneWeek(item.pubDate));
+  try {
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`;
+    const res = await fetch(proxyUrl);
+    if (!res.ok) throw new Error(`Feed proxy failed: ${res.status}`);
+    const xmlText = await res.text();
+    const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+    if (doc.querySelector("parsererror")) throw new Error("Invalid RSS XML");
+
+    const items = Array.from(doc.querySelectorAll("item")).slice(0, 20).map(item => {
+      const title = item.querySelector("title")?.textContent?.trim() || "Untitled";
+      const description = item.querySelector("description")?.textContent?.trim() || item.querySelector("content\\:encoded")?.textContent?.trim() || "";
+      const link = item.querySelector("link")?.textContent?.trim() || item.querySelector("guid")?.textContent?.trim() || "";
+      const pubDate = item.querySelector("pubDate")?.textContent?.trim() || item.querySelector("dc\\:date")?.textContent?.trim() || "";
+      return { title, description, link, pubDate };
+    });
+
+    return items.filter(item => isWithinOneWeek(item.pubDate));
+  } catch (error) {
+    console.error("RSS fetch failed for", feedUrl, error);
+    return [];
+  }
 }
 
 async function searchSigmaRules(keywords) {
@@ -279,22 +295,25 @@ export default function ThreatFeedPage() {
     setLoading(true);
     setArticles([]);
     setLoadedFeeds(0);
-    for (const feed of FEEDS) {
-      if (!activeFeeds.includes(feed.name)) continue;
-      try {
-        const items = await fetchRSSviaProxy(feed.url);
-        const scored = items.map(item => ({
-          ...item,
-          _source: feed,
-          _score: scoreArticle(item.title, item.description || ""),
-          _keywords: extractKeywords(item.title + " " + (item.description || "")),
-        }));
-        setArticles(prev => [...prev, ...scored]);
-        setLoadedFeeds(n => n + 1);
-      } catch {
-        setLoadedFeeds(n => n + 1);
-      }
-    }
+
+    const feedsToLoad = FEEDS.filter(feed => activeFeeds.includes(feed.name));
+    const results = await Promise.allSettled(
+      feedsToLoad.map(feed => fetchRSSviaProxy(feed.url).then(items => ({ feed, items })))
+    );
+
+    const scoredArticles = results.flatMap(result => {
+      if (result.status !== "fulfilled") return [];
+      const { feed, items } = result.value;
+      return items.map(item => ({
+        ...item,
+        _source: feed,
+        _score: scoreArticle(item.title, item.description || ""),
+        _keywords: extractKeywords(item.title + " " + (item.description || "")),
+      }));
+    });
+
+    setArticles(scoredArticles);
+    setLoadedFeeds(feedsToLoad.length);
     setLastRefresh(new Date().toLocaleTimeString());
     setLoading(false);
   }, [activeFeeds]);
