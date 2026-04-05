@@ -1,14 +1,22 @@
 import { useState, useEffect, useCallback } from "react";
 
 const FEEDS = [
-  { name: "Unit 42", url: "https://unit42.paloaltonetworks.com/feed/", color: "#ff6b35" },
-  { name: "SANS ISC", url: "https://isc.sans.edu/rssfeed_full.xml", color: "#00d4ff" },
   { name: "BleepingComputer", url: "https://www.bleepingcomputer.com/feed/", color: "#a78bfa" },
-  { name: "Mandiant", url: "https://www.mandiant.com/resources/blog/rss.xml", color: "#34d399" },
-  { name: "Krebs on Security", url: "https://krebsonsecurity.com/feed/", color: "#fbbf24" },
   { name: "The Hacker News", url: "https://feeds.feedburner.com/TheHackersNews", color: "#f87171" },
+  { name: "Krebs on Security", url: "https://krebsonsecurity.com/feed/", color: "#fbbf24" },
+  { name: "SANS ISC", url: "https://isc.sans.edu/rssfeed_full.xml", color: "#00d4ff" },
+  { name: "Unit 42", url: "https://unit42.paloaltonetworks.com/feed/", color: "#ff6b35" },
   { name: "Elastic Sec Labs", url: "https://www.elastic.co/security-labs/rss/feed.xml", color: "#00ff9d" },
   { name: "DFIR Report", url: "https://thedfirreport.com/feed/", color: "#ff4d6d" },
+  { name: "Mandiant", url: "https://www.mandiant.com/resources/blog/rss.xml", color: "#34d399" },
+  { name: "Cisco Talos", url: "https://blog.talosintelligence.com/rss/", color: "#1d9bf0" },
+  { name: "Securelist (KL)", url: "https://securelist.com/feed/", color: "#e11d48" },
+  { name: "Microsoft MSRC", url: "https://msrc.microsoft.com/blog/feed", color: "#0078d4" },
+  { name: "Recorded Future", url: "https://www.recordedfuture.com/feed", color: "#6ee7b7" },
+  { name: "Malwarebytes Labs", url: "https://www.malwarebytes.com/blog/feed/", color: "#4ade80" },
+  { name: "Checkpoint Research", url: "https://research.checkpoint.com/feed/", color: "#e879f9" },
+  { name: "Trend Micro", url: "https://www.trendmicro.com/en_us/research.rss", color: "#f97316" },
+  { name: "Dark Reading", url: "https://www.darkreading.com/rss.xml", color: "#94a3b8" },
 ];
 
 const IOC_PATTERNS = {
@@ -50,11 +58,21 @@ function extractKeywords(text) {
   return THREAT_KEYWORDS.filter(kw => clean.includes(kw.toLowerCase()));
 }
 
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+function isWithinOneWeek(dateStr) {
+  if (!dateStr) return true; // keep if no date
+  const pub = new Date(dateStr);
+  if (isNaN(pub.getTime())) return true; // keep if unparseable
+  return Date.now() - pub.getTime() <= ONE_WEEK_MS;
+}
+
 async function fetchRSSviaProxy(feedUrl) {
-  const proxy = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&count=6`;
+  const proxy = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&count=20`;
   const res = await fetch(proxy);
   const data = await res.json();
-  return data.items || [];
+  const items = data.items || [];
+  return items.filter(item => isWithinOneWeek(item.pubDate));
 }
 
 async function searchSigmaRules(keywords) {
@@ -254,6 +272,7 @@ export default function ThreatFeedPage() {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("score");
   const [activeFeeds, setActiveFeeds] = useState(FEEDS.map(f => f.name));
+  const [showAllFeeds, setShowAllFeeds] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
 
   const loadFeeds = useCallback(async () => {
@@ -299,13 +318,18 @@ export default function ThreatFeedPage() {
       {/* Sidebar */}
       <div style={{ background: "rgba(255,255,255,0.01)", borderRight: "1px solid rgba(255,255,255,0.06)", padding: 16 }}>
         <div style={{ fontSize: 10, color: "#3d444d", textTransform: "uppercase", letterSpacing: 2, marginBottom: 12, fontFamily: "Fira Code" }}>Sources</div>
-        {FEEDS.map(feed => (
+        {(showAllFeeds ? FEEDS : FEEDS.slice(0, 8)).map(feed => (
           <div key={feed.name} onClick={() => setActiveFeeds(prev => prev.includes(feed.name) ? prev.filter(f => f !== feed.name) : [...prev, feed.name])}
             style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 6, cursor: "pointer", marginBottom: 3, background: activeFeeds.includes(feed.name) ? "rgba(255,255,255,0.03)" : "transparent", border: `1px solid ${activeFeeds.includes(feed.name) ? feed.color + "30" : "transparent"}`, transition: "all 0.15s" }}>
             <div style={{ width: 7, height: 7, borderRadius: "50%", background: activeFeeds.includes(feed.name) ? feed.color : "#1e2d40", flexShrink: 0 }} />
             <span style={{ fontSize: 11, color: activeFeeds.includes(feed.name) ? feed.color : "#3d444d", fontFamily: "Fira Code" }}>{feed.name}</span>
           </div>
         ))}
+        {FEEDS.length > 8 && (
+          <button onClick={() => setShowAllFeeds(p => !p)} style={{ width: "100%", background: "none", border: "1px solid rgba(255,255,255,0.06)", color: "#6e7681", borderRadius: 6, padding: "5px 0", cursor: "pointer", fontSize: 10, fontFamily: "Fira Code", marginTop: 4 }}>
+            {showAllFeeds ? "▲ Show less" : `▼ +${FEEDS.length - 8} more`}
+          </button>
+        )}
 
         <div style={{ fontSize: 10, color: "#3d444d", textTransform: "uppercase", letterSpacing: 2, margin: "20px 0 12px", fontFamily: "Fira Code" }}>Stats</div>
         <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: 12 }}>
@@ -354,6 +378,7 @@ export default function ThreatFeedPage() {
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 10, color: "#00ff9d", background: "rgba(0,255,157,0.08)", border: "1px solid rgba(0,255,157,0.2)", borderRadius: 6, padding: "4px 10px", fontFamily: "Fira Code", fontWeight: 700 }}>⏱ Last 7 days</span>
             {lastRefresh && <span style={{ fontSize: 10, color: "#3d444d", fontFamily: "Fira Code" }}>Refreshed {lastRefresh}</span>}
             {highCount > 0 && <span style={{ background: "rgba(255,77,109,0.1)", border: "1px solid rgba(255,77,109,0.3)", color: "#ff4d6d", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700, fontFamily: "Fira Code" }}>⚠ {highCount} HIGH</span>}
             <button onClick={loadFeeds} disabled={loading} style={{ background: loading ? "rgba(255,255,255,0.02)" : "rgba(0,212,255,0.06)", border: "1px solid rgba(0,212,255,0.2)", color: "#00d4ff", borderRadius: 8, padding: "8px 16px", cursor: loading ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700, fontFamily: "Fira Code" }}>
