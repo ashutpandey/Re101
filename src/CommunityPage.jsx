@@ -1,334 +1,5 @@
-import { useState } from "react";
-
-const PEOPLE = [
-  {
-    handle: "@vxunderground",
-    name: "vx-underground",
-    desc: "Largest public malware sample archive on the planet. First to publish threat actor statements, sample drops, and intelligence. Follow for raw, unfiltered threat news.",
-    url: "https://x.com/vxunderground",
-    tag: "Malware Intel",
-    why: "They receive direct contact from ransomware groups. Indispensable.",
-  },
-  {
-    handle: "@GossiTheDog",
-    name: "Kevin Beaumont",
-    desc: "Ex-Microsoft, runs DoubleParsar.com. First responder on almost every major CVE exploitation wave. Incredibly direct, technically deep, and zero tolerance for vendor spin.",
-    url: "https://x.com/GossiTheDog",
-    tag: "Threat Intel",
-    why: "If something is being exploited in the wild right now, he'll say it first.",
-  },
-  {
-    handle: "@hasherezade",
-    name: "hasherezade",
-    desc: "Malware researcher at Malwarebytes. Publishes detailed RE write-ups, builds free tools (PE-bear, hollows_hunter), and explains complex techniques clearly. One of the best educators in RE.",
-    url: "https://x.com/hasherezade",
-    tag: "Malware RE",
-    why: "Her PE-bear tool and blog posts are used by thousands of analysts worldwide.",
-  },
-  {
-    handle: "@OALabs",
-    name: "OALabs",
-    desc: "The best YouTube channel for practical malware analysis. Step-by-step walkthroughs of real malware using Ghidra, x64dbg, and custom Python scripts. Free and consistently excellent.",
-    url: "https://x.com/OALabs",
-    tag: "RE / Analysis",
-    why: "Start here for hands-on RE learning. Watch them analyze real samples.",
-  },
-  {
-    handle: "@DFIRReport",
-    name: "The DFIR Report",
-    desc: "Publishes full attack chain walkthroughs — from initial access through ransomware deployment — with IOCs, Sigma/YARA rules, and ATT&CK mapping. Every post is pure signal.",
-    url: "https://x.com/TheDFIRReport",
-    tag: "DFIR / Detection",
-    why: "One DFIR Report post teaches you more than a week of reading books.",
-  },
-  {
-    handle: "@cglyer",
-    name: "Chris Glyer",
-    desc: "Microsoft Threat Intel. Crimeware and ransomware specialist. Tracks ransomware group activity, affiliate infrastructure, and TTP evolution. Deep research, credible sources.",
-    url: "https://x.com/cglyer",
-    tag: "Ransomware",
-    why: "Ransomware tracking and attribution at the highest level.",
-  },
-  {
-    handle: "@0xdf",
-    name: "0xdf",
-    desc: "Publishes incredibly detailed HackTheBox walkthroughs and CTF write-ups. Each post teaches a specific technique — RE, forensics, web, binary exploitation — with clear explanations.",
-    url: "https://x.com/0xdf_",
-    tag: "CTF / RE",
-    why: "His write-ups are a masterclass in methodical binary analysis.",
-  },
-  {
-    handle: "@billyleonard",
-    name: "Billy Leonard",
-    desc: "Google Threat Analysis Group. Nation-state threat tracking — Russian, North Korean, Iranian APT campaigns. One of the most credible public APT analysts.",
-    url: "https://x.com/billyleonard",
-    tag: "APT / Nation State",
-    why: "Primary source on state-sponsored cyber operations.",
-  },
-  {
-    handle: "@malwrhunterteam",
-    name: "MalwareHunterTeam",
-    desc: "Dedicated to hunting and identifying new malware families. Tracks ransomware operations, publishes decryptors, and shares IOCs in real time. Active daily.",
-    url: "https://x.com/malwrhunterteam",
-    tag: "Malware Intel",
-    why: "Fastest team to identify new ransomware variants and publish IOCs.",
-  },
-  {
-    handle: "@FlorianRoth",
-    name: "Florian Roth",
-    desc: "Author of THOR scanner, creator of Sigma detection rules, prolific YARA rule writer. If you care about detection engineering, every post is worth reading.",
-    url: "https://x.com/cyb3rops",
-    tag: "Detection Eng",
-    why: "The most prolific detection rule author alive. Learn from his methodology.",
-  },
-  {
-    handle: "@briankrebs",
-    name: "Brian Krebs",
-    desc: "Investigative journalist. Uncovers cybercrime operations, ransomware gang finances, and breach details the industry ignores. No vendor agenda, follows the money.",
-    url: "https://x.com/briankrebs",
-    tag: "Threat News",
-    why: "The best investigative journalism in cybersecurity, period.",
-  },
-  {
-    handle: "@mikko",
-    name: "Mikko Hyppönen",
-    desc: "CRO at F-Secure. 30+ years of malware research. OG of the industry. Broad perspective on the threat landscape, nation-state malware, and the history of computer viruses.",
-    url: "https://x.com/mikko",
-    tag: "Threat Intel",
-    why: "Rare combination of deep history + current relevance.",
-  },
-  {
-    handle: "@VK_Intel",
-    name: "Vasile Kinds (VK Intel)",
-    desc: "Independent threat researcher. Tracks crimeware, phishing infrastructure, and dark web actor activity. Fast, accurate, and always sourced.",
-    url: "https://x.com/VK_Intel",
-    tag: "Malware Intel",
-    why: "One of the fastest independent IOC publishers. Essential for crimeware tracking.",
-  },
-  {
-    handle: "@AltShiftPrtScn",
-    name: "Greg Lesnewich",
-    desc: "Threat researcher at Recorded Future. Focuses on North Korean APT activity (Lazarus, Kimsuky) and DPRK intrusion campaigns. Publishes detailed technical threads.",
-    url: "https://x.com/AltShiftPrtScn",
-    tag: "APT / Nation State",
-    why: "Best public analyst for DPRK/Lazarus Group activity.",
-  },
-  {
-    handle: "@ryankingsbury",
-    name: "Ryan Kingsbury",
-    desc: "Malware researcher with focus on obfuscation, packers, and evasion techniques. Publishes detailed unpacking guides and RE methodology walkthroughs.",
-    url: "https://x.com/ryankingsbury",
-    tag: "Malware RE",
-    why: "Deep technical posts on packer analysis and anti-evasion research.",
-  },
-  {
-    handle: "@nicolasf_",
-    name: "Nicolas Falliere",
-    desc: "Co-author of the Stuxnet analysis at Symantec. One of the most respected names in the history of malware analysis. Now at independent research.",
-    url: "https://x.com/nicolasf_",
-    tag: "Malware RE",
-    why: "OG Stuxnet researcher — historical credibility meets active posting.",
-  },
-  {
-    handle: "@SecurityJoes",
-    name: "Security Joes",
-    desc: "Incident response firm publishing detailed intrusion reports. Strong on fileless malware, living-off-the-land techniques, and lateral movement analysis.",
-    url: "https://x.com/SecurityJoes",
-    tag: "DFIR / Detection",
-    why: "Consistently detailed IR reports with IOCs and detection logic.",
-  },
-  {
-    handle: "@Unit42_Intel",
-    name: "Unit 42 Intel",
-    desc: "Palo Alto Networks threat intelligence team. Tracks ransomware groups, C2 infrastructure, and publishes detailed threat actor profiles with MITRE mapping.",
-    url: "https://x.com/Unit42_Intel",
-    tag: "Threat Intel",
-    why: "High-volume, high-quality threat intel from a top-tier team.",
-  },
-  {
-    handle: "@threatprofiling",
-    name: "Threat Profiling",
-    desc: "Daily curation of the most important threat intelligence, malware reports, and security research from across the community. Great signal aggregator.",
-    url: "https://x.com/threatprofiling",
-    tag: "Threat Intel",
-    why: "Best signal-to-noise ratio for daily threat intel curation.",
-  },
-  {
-    handle: "@reverseame",
-    name: "Jose Miguel Esparza",
-    desc: "Malware researcher at Blueliv. Specializes in crimeware, banking trojans, and botnet analysis. Writes detailed malware family teardowns.",
-    url: "https://x.com/reverseame",
-    tag: "Malware RE",
-    why: "Banking trojan and crimeware analysis at a deep technical level.",
-  },
-  {
-    handle: "@TalosSecurity",
-    name: "Cisco Talos",
-    desc: "One of the largest threat intelligence teams in the world. Broad coverage: network threats, malware campaigns, vulnerability research, and incident response.",
-    url: "https://x.com/TalosSecurity",
-    tag: "Threat Intel",
-    why: "Cisco Talos sees internet-scale threat telemetry. Follow for volume + quality.",
-  },
-  {
-    handle: "@SentinelOne",
-    name: "SentinelLabs",
-    desc: "Research team at SentinelOne. Publishes APT analysis, malware deep dives, and supply chain attack research. Strong on nation-state actors.",
-    url: "https://x.com/SentinelOne",
-    tag: "APT / Nation State",
-    why: "SentinelLabs consistently breaks new APT research and publishes the details.",
-  },
-  {
-    handle: "@JohnLaTwC",
-    name: "John Lambert",
-    desc: "VP at Microsoft Threat Intelligence. Philosophical, insightful posts about attacker mindset, defender strategy, and why certain detection approaches fail.",
-    url: "https://x.com/JohnLaTwC",
-    tag: "Threat Intel",
-    why: "His 'attacker perspective' threads change how you think about detection.",
-  },
-];
-
-const BLOGS = [
-  {
-    name: "The DFIR Report",
-    url: "https://thedfirreport.com/",
-    color: "#ff4d6d",
-    desc: "Full attack chain walkthroughs. Each post covers Initial Access → Impact with IOCs, screenshots, Sigma rules, and timeline. Essential weekly reading.",
-    freq: "Weekly",
-  },
-  {
-    name: "Elastic Security Labs",
-    url: "https://www.elastic.co/security-labs",
-    color: "#0099ff",
-    desc: "Technical malware analysis from a team that sees enterprise telemetry. Deep dives on malware families, detections, and intrusion campaigns.",
-    freq: "Bi-weekly",
-  },
-  {
-    name: "Malware Traffic Analysis",
-    url: "https://www.malware-traffic-analysis.net/",
-    color: "#f5a623",
-    desc: "Brad Duncan's archive of real-world PCAP files with writeups. Best free resource for network forensics practice. Download the PCAPs and analyze yourself.",
-    freq: "Weekly",
-  },
-  {
-    name: "vx-underground Papers",
-    url: "https://vx-underground.org/",
-    color: "#c084fc",
-    desc: "Archive of malware source code, papers, and academic research. Overwhelming in scope — use it as a reference library, not a reading list.",
-    freq: "Ongoing",
-  },
-  {
-    name: "Malwarebytes Labs",
-    url: "https://www.malwarebytes.com/blog/threat-intelligence",
-    color: "#00ff9d",
-    desc: "Threat intelligence blog from a major AV vendor. Good mix of technical depth and accessible writing. hasherezade publishes here.",
-    freq: "Weekly",
-  },
-  {
-    name: "Mandiant Blog",
-    url: "https://www.mandiant.com/resources/blog",
-    color: "#34d399",
-    desc: "Nation-state APT research, incident response learnings, and malware analysis from the company that coined the term APT. High prestige, high quality.",
-    freq: "Weekly",
-  },
-  {
-    name: "Unit 42 (Palo Alto)",
-    url: "https://unit42.paloaltonetworks.com/",
-    color: "#ff6b35",
-    desc: "Threat intel and malware analysis from Palo Alto Networks' research team. Strong on C2 infrastructure analysis and threat actor profiling.",
-    freq: "Weekly",
-  },
-  {
-    name: "Recorded Future Blog",
-    url: "https://www.recordedfuture.com/research",
-    color: "#6ee7b7",
-    desc: "Strategic and technical threat intelligence. Good for understanding threat actor motivations, geopolitical context, and emerging campaigns.",
-    freq: "Weekly",
-  },
-  {
-    name: "SANS Internet Storm Center",
-    url: "https://isc.sans.edu/",
-    color: "#fbbf24",
-    desc: "Daily diaries from security practitioners worldwide. Quick technical notes on emerging threats, unusual malware behavior, and network anomalies.",
-    freq: "Daily",
-  },
-  {
-    name: "Malware Unicorn",
-    url: "https://malwareunicorn.org/",
-    color: "#f87171",
-    desc: "Amanda Rousseau's workshops and tutorials on malware analysis and RE. Free workshop materials used at DEF CON and Black Hat.",
-    freq: "Occasional",
-  },
-  {
-    name: "Cisco Talos Blog",
-    url: "https://blog.talosintelligence.com/",
-    color: "#1d9bf0",
-    desc: "One of the highest-volume threat intel blogs. Covers network threats, malware campaigns, vulnerability disclosures, and incident response findings from a team that sees internet-scale data.",
-    freq: "Daily",
-  },
-  {
-    name: "Securelist (Kaspersky)",
-    url: "https://securelist.com/",
-    color: "#e11d48",
-    desc: "Kaspersky's research blog. Known for groundbreaking APT analysis — Equation Group, Flame, MiniDuke. Deep technical write-ups, sometimes the only public analysis of a given nation-state tool.",
-    freq: "Weekly",
-  },
-  {
-    name: "SentinelLabs",
-    url: "https://www.sentinelone.com/labs/",
-    color: "#6366f1",
-    desc: "SentinelOne's research team publishes high-quality APT analysis, supply chain attack research, and malware family teardowns with indicators. Strong on DPRK and Chinese actors.",
-    freq: "Bi-weekly",
-  },
-  {
-    name: "Checkpoint Research",
-    url: "https://research.checkpoint.com/",
-    color: "#e879f9",
-    desc: "Check Point's threat research team. Known for exposing major campaigns before others. Strong on mobile malware, phishing infrastructure, and crimeware ecosystems.",
-    freq: "Weekly",
-  },
-  {
-    name: "Microsoft Security Blog",
-    url: "https://www.microsoft.com/en-us/security/blog/",
-    color: "#0078d4",
-    desc: "Microsoft's main security research blog. Covers nation-state activity (MSTIC), vulnerability research, identity attacks, and threat actor profiles with direct access to Azure/Windows telemetry.",
-    freq: "Weekly",
-  },
-  {
-    name: "Google Project Zero",
-    url: "https://googleprojectzero.blogspot.com/",
-    color: "#4285f4",
-    desc: "Elite vulnerability research from Google's bug hunting team. If you care about how exploits actually work at the lowest level — memory corruption, browser exploits, 0-days — this is essential reading.",
-    freq: "Monthly",
-  },
-  {
-    name: "hasherezade's Blog",
-    url: "https://hshrzd.wordpress.com/",
-    color: "#f87171",
-    desc: "hasherezade's personal malware analysis blog. Detailed, technical, accessible. PE format deep dives, malware family analysis, and tool development walkthroughs.",
-    freq: "Monthly",
-  },
-  {
-    name: "0xdf Hacks Stuff",
-    url: "https://0xdf.gitlab.io/",
-    color: "#f5a623",
-    desc: "Exhaustive CTF write-ups and binary analysis walk-throughs. Every post is a masterclass in methodical RE and exploitation. Essential for learning the analyst's thought process.",
-    freq: "Weekly",
-  },
-  {
-    name: "Objective-See (macOS)",
-    url: "https://objective-see.org/blog.html",
-    color: "#a78bfa",
-    desc: "Patrick Wardle's macOS-focused security research. If you care about macOS malware, this is the definitive public source. Builds free Mac security tools and analyzes every major macOS threat.",
-    freq: "Monthly",
-  },
-  {
-    name: "SecureList / GReAT Blog",
-    url: "https://securelist.com/category/research/",
-    color: "#fb923c",
-    desc: "Kaspersky's Global Research and Analysis Team. Home of the Equation Group, Carbanak, and Lazarus disclosures. When they publish, it's almost always a major discovery.",
-    freq: "Monthly",
-  },
-];
+import { useState, useEffect } from "react";
+import { peopleAPI, blogsAPI } from "./services/api";
 
 const REDDITS = [
   { name: "r/ReverseEngineering", url: "https://reddit.com/r/ReverseEngineering", desc: "High quality posts on binary RE, tools, and research papers. Low noise.", tag: "RE", members: "~70k" },
@@ -369,6 +40,34 @@ const SECTIONS = ["People", "Blogs", "Reddit", "Discord"];
 
 export default function CommunityPage() {
   const [activeSection, setActiveSection] = useState("People");
+  const [showAllBlogs, setShowAllBlogs] = useState(false);
+  const [selectedPerson, setSelectedPerson] = useState(null);
+  const [people, setPeople] = useState([]);
+  const [blogs, setBlogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [peopleData, blogsData] = await Promise.all([
+          peopleAPI.getAll(),
+          blogsAPI.getAll()
+        ]);
+        setPeople(peopleData);
+        setBlogs(blogsData);
+        setError(null);
+      } catch (err) {
+        setError('Failed to load community data');
+        console.error('Error fetching community data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
@@ -399,42 +98,52 @@ export default function CommunityPage() {
       {/* People */}
       {activeSection === "People" && (
         <div>
-          <p style={{ fontSize: 12, color: "#6e7681", marginBottom: 20, fontFamily: "Syne", lineHeight: 1.7 }}>
-            These are the researchers, analysts, and journalists doing the most important public work. Follow all of them on X/Twitter.
-          </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 }}>
-            {PEOPLE.map((p, i) => (
-              <div key={i} style={{
-                background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
-                borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 10,
-                transition: "all 0.2s",
-              }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = `${TAG_COLORS[p.tag] || "#6e7681"}40`; e.currentTarget.style.background = `${TAG_COLORS[p.tag] || "#6e7681"}06`; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#e6edf3", fontFamily: "Syne", marginBottom: 2 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: "#3d444d", fontFamily: "Fira Code" }}>{p.handle}</div>
+          {loading && (
+            <div style={{ textAlign: "center", padding: "40px", color: "#6e7681" }}>
+              Loading community...
+            </div>
+          )}
+
+          {error && (
+            <div style={{ textAlign: "center", padding: "40px", color: "#ff4d6d" }}>
+              {error}
+            </div>
+          )}
+
+          {!loading && !error && (
+            <>
+              <p style={{ fontSize: 12, color: "#6e7681", marginBottom: 20, fontFamily: "Syne", lineHeight: 1.7 }}>
+                These are the researchers, analysts, and journalists doing the most important public work. Follow all of them on X/Twitter.
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 }}>
+                {people.map((p) => (
+                  <div key={p._id} style={{
+                    background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
+                    borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 10,
+                    transition: "all 0.2s", cursor: "pointer",
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = `${TAG_COLORS[p.tag] || "#6e7681"}40`; e.currentTarget.style.background = `${TAG_COLORS[p.tag] || "#6e7681"}06`; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
+                    onClick={() => setSelectedPerson(p)}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#e6edf3", fontFamily: "Syne", marginBottom: 2 }}>{p.name}</div>
+                        <div style={{ fontSize: 11, color: "#3d444d", fontFamily: "Fira Code" }}>{p.handle}</div>
+                      </div>
+                      <Tag label={p.tag} />
+                    </div>
+                    <p style={{ fontSize: 12, color: "#8b949e", lineHeight: 1.6, margin: 0, fontFamily: "Syne" }}>{p.desc}</p>
+                    <div style={{ padding: "8px 10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 6 }}>
+                      <span style={{ fontSize: 10, color: "#00ff9d", fontWeight: 700 }}>WHY FOLLOW: </span>
+                      <span style={{ fontSize: 11, color: "#6e7681", fontFamily: "Syne" }}>{p.why}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#0099ff", fontFamily: "Fira Code", textAlign: "center" }}>Click for About</div>
                   </div>
-                  <Tag label={p.tag} />
-                </div>
-                <p style={{ fontSize: 12, color: "#8b949e", lineHeight: 1.6, margin: 0, fontFamily: "Syne" }}>{p.desc}</p>
-                <div style={{ padding: "8px 10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 6 }}>
-                  <span style={{ fontSize: 10, color: "#00ff9d", fontWeight: 700 }}>WHY FOLLOW: </span>
-                  <span style={{ fontSize: 11, color: "#6e7681", fontFamily: "Syne" }}>{p.why}</span>
-                </div>
-                <a href={p.url} target="_blank" rel="noreferrer" style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  fontSize: 11, color: "#0099ff", textDecoration: "none",
-                  background: "rgba(0,153,255,0.06)", border: "1px solid rgba(0,153,255,0.2)",
-                  borderRadius: 6, padding: "5px 10px", fontWeight: 600, fontFamily: "Fira Code",
-                }}>
-                  Follow on X ↗
-                </a>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </div>
       )}
 
@@ -445,8 +154,8 @@ export default function CommunityPage() {
             These are the blogs worth reading regularly. Subscribe via RSS or check weekly. Quality over volume.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {BLOGS.map((b, i) => (
-              <a key={i} href={b.url} target="_blank" rel="noreferrer" style={{
+            {(showAllBlogs ? blogs : blogs.slice(0, 5)).map((b) => (
+              <a key={b._id} href={b.url} target="_blank" rel="noreferrer" style={{
                 display: "flex", alignItems: "center", gap: 16,
                 padding: "16px 18px", background: "rgba(255,255,255,0.02)",
                 border: "1px solid rgba(255,255,255,0.06)", borderLeft: `3px solid ${b.color}`,
@@ -466,6 +175,17 @@ export default function CommunityPage() {
               </a>
             ))}
           </div>
+          {!showAllBlogs && blogs.length > 5 && (
+            <div style={{ textAlign: "center", marginTop: 20 }}>
+              <button onClick={() => setShowAllBlogs(true)} style={{
+                background: "rgba(0,153,255,0.06)", border: "1px solid rgba(0,153,255,0.2)",
+                color: "#0099ff", padding: "8px 16px", borderRadius: 6, cursor: "pointer",
+                fontSize: 12, fontWeight: 600, fontFamily: "Fira Code",
+              }}>
+                Show All Blogs ({blogs.length})
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -527,6 +247,64 @@ export default function CommunityPage() {
                 <span style={{ fontSize: 12, color: "#5865f2", fontWeight: 600, fontFamily: "Fira Code", whiteSpace: "nowrap" }}>Join ↗</span>
               </a>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Person About Modal */}
+      {selectedPerson && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 1000, padding: 20,
+        }} onClick={() => setSelectedPerson(null)}>
+          <div style={{
+            background: "rgba(13,17,23,0.95)", border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: 12, padding: 24, maxWidth: 500, width: "100%", maxHeight: "80vh", overflow: "auto",
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <div>
+                <h2 style={{ fontSize: 20, fontWeight: 800, color: "#e6edf3", margin: "0 0 4px", fontFamily: "Syne" }}>{selectedPerson.name}</h2>
+                <div style={{ fontSize: 12, color: "#6e7681", fontFamily: "Fira Code" }}>{selectedPerson.handle}</div>
+              </div>
+              <button onClick={() => setSelectedPerson(null)} style={{
+                background: "none", border: "none", color: "#6e7681", cursor: "pointer", fontSize: 18,
+              }}>×</button>
+            </div>
+            
+            <p style={{ fontSize: 14, color: "#8b949e", margin: "0 0 20px", lineHeight: 1.6, fontFamily: "Syne" }}>{selectedPerson.desc}</p>
+            
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#00ff9d", marginBottom: 8, fontFamily: "Fira Code" }}>BLOGS & WORK</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {selectedPerson.blogs.map((blog, idx) => (
+                  <span key={idx} style={{
+                    fontSize: 11, color: "#e6edf3", background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "4px 8px",
+                    fontFamily: "Fira Code",
+                  }}>{blog}</span>
+                ))}
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#f5a623", marginBottom: 8, fontFamily: "Fira Code" }}>BEST WORK</div>
+              <p style={{ fontSize: 12, color: "#8b949e", margin: 0, lineHeight: 1.6, fontFamily: "Syne" }}>{selectedPerson.bestWork}</p>
+            </div>
+            
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#0099ff", marginBottom: 8, fontFamily: "Fira Code" }}>WHY FOLLOW</div>
+              <p style={{ fontSize: 12, color: "#6e7681", margin: 0, lineHeight: 1.6, fontFamily: "Syne" }}>{selectedPerson.why}</p>
+            </div>
+            
+            <a href={selectedPerson.url} target="_blank" rel="noreferrer" style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              fontSize: 12, color: "#0099ff", textDecoration: "none",
+              background: "rgba(0,153,255,0.06)", border: "1px solid rgba(0,153,255,0.2)",
+              borderRadius: 6, padding: "8px 12px", fontWeight: 600, fontFamily: "Fira Code",
+            }}>
+              Follow on X ↗
+            </a>
           </div>
         </div>
       )}

@@ -69,7 +69,8 @@ function isWithinOneWeek(dateStr) {
 
 async function fetchRSSviaProxy(feedUrl) {
   try {
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`;
+    const proxyBase = import.meta.env.VITE_API_URL || '/api';
+    const proxyUrl = `${proxyBase}/proxy?url=${encodeURIComponent(feedUrl)}`;
     const res = await fetch(proxyUrl);
     if (!res.ok) throw new Error(`Feed proxy failed: ${res.status}`);
     const xmlText = await res.text();
