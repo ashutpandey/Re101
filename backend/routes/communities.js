@@ -1,6 +1,7 @@
-const express = require('express');
+import express from 'express';
+import Community from '../models/Community.js';
+
 const router = express.Router();
-const Community = require('../models/Community');
 
 // Get community data (Reddit and Discord)
 router.get('/', async (req, res) => {
@@ -50,4 +51,4 @@ router.put('/', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

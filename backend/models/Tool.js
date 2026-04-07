@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const toolSchema = new mongoose.Schema({
   name: {
@@ -59,4 +59,4 @@ const toolSchema = new mongoose.Schema({
   timestamps: true
 });
 
-module.exports = mongoose.model('Tool', toolSchema);
+export default mongoose.model('Tool', toolSchema);

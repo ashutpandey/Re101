@@ -1,6 +1,7 @@
-const express = require('express');
+import express from 'express';
+import Tool from '../models/Tool.js';
+
 const router = express.Router();
-const Tool = require('../models/Tool');
 
 // Get all tools
 router.get('/', async (req, res) => {
@@ -112,4 +113,4 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
