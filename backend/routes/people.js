@@ -1,13 +1,18 @@
 import express from 'express';
-import Person from '../models/Person.js';
+import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
 
 // Get all people
 router.get('/', async (req, res) => {
   try {
-    const people = await Person.find();
-    res.json(people);
+    const { data, error } = await supabase
+      .from('people')
+      .select('*')
+      .order('name');
+    
+    if (error) throw error;
+    res.json(data || []);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -16,11 +21,17 @@ router.get('/', async (req, res) => {
 // Get single person
 router.get('/:id', async (req, res) => {
   try {
-    const person = await Person.findById(req.params.id);
-    if (!person) {
+    const { data, error } = await supabase
+      .from('people')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    
+    if (error) throw error;
+    if (!data) {
       return res.status(404).json({ error: 'Person not found' });
     }
-    res.json(person);
+    res.json(data);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -29,9 +40,13 @@ router.get('/:id', async (req, res) => {
 // Create new person
 router.post('/', async (req, res) => {
   try {
-    const person = new Person(req.body);
-    await person.save();
-    res.status(201).json(person);
+    const { data, error } = await supabase
+      .from('people')
+      .insert([req.body])
+      .select();
+    
+    if (error) throw error;
+    res.status(201).json(data?.[0]);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -40,14 +55,17 @@ router.post('/', async (req, res) => {
 // Update person
 router.put('/:id', async (req, res) => {
   try {
-    const person = await Person.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true
-    });
-    if (!person) {
+    const { data, error } = await supabase
+      .from('people')
+      .update(req.body)
+      .eq('id', req.params.id)
+      .select();
+    
+    if (error) throw error;
+    if (!data || data.length === 0) {
       return res.status(404).json({ error: 'Person not found' });
     }
-    res.json(person);
+    res.json(data[0]);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -56,8 +74,14 @@ router.put('/:id', async (req, res) => {
 // Delete person
 router.delete('/:id', async (req, res) => {
   try {
-    const person = await Person.findByIdAndDelete(req.params.id);
-    if (!person) {
+    const { data, error } = await supabase
+      .from('people')
+      .delete()
+      .eq('id', req.params.id)
+      .select();
+    
+    if (error) throw error;
+    if (!data || data.length === 0) {
       return res.status(404).json({ error: 'Person not found' });
     }
     res.json({ message: 'Person deleted successfully' });

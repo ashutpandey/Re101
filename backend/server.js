@@ -1,5 +1,4 @@
 import express from 'express';
-import mongoose from 'mongoose';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -21,12 +20,6 @@ const limiter = rateLimit({
   max: 100 // limit each IP to 100 requests per windowMs
 });
 app.use(limiter);
-
-// Database connection
-const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/cybersecurity-roadmap';
-mongoose.connect(mongoUri)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
 import toolsRouter from './routes/tools.js';

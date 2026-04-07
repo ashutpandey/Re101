@@ -1,15 +1,23 @@
 import express from 'express';
-import Community from '../models/Community.js';
+import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
 
 // Get community data (Reddit and Discord)
 router.get('/', async (req, res) => {
   try {
-    let community = await Community.findOne();
-    if (!community) {
-      // Create default community data if none exists
-      community = new Community({
+    const { data, error } = await supabase
+      .from('communities')
+      .select('*')
+      .limit(1);
+    
+    if (error) throw error;
+    
+    if (data && data.length > 0) {
+      res.json(data[0]);
+    } else {
+      // Return default community data structure
+      res.json({
         reddits: [
           { name: "r/ReverseEngineering", url: "https://reddit.com/r/ReverseEngineering", desc: "High quality posts on binary RE, tools, and research papers. Low noise.", tag: "RE", members: "~70k" },
           { name: "r/Malware", url: "https://reddit.com/r/Malware", desc: "Malware identification, reports, sandbox results, and IOC sharing.", tag: "Malware", members: "~60k" },
@@ -26,9 +34,7 @@ router.get('/', async (req, res) => {
           { name: "OpenSecurityTraining2", desc: "Community for OST2 courses. Get help on kernel internals, RE, and x86 assembly courses.", url: "https://discord.gg/ost2", tag: "RE" },
         ]
       });
-      await community.save();
     }
-    res.json(community);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -37,15 +43,33 @@ router.get('/', async (req, res) => {
 // Update community data
 router.put('/', async (req, res) => {
   try {
-    let community = await Community.findOne();
-    if (!community) {
-      community = new Community(req.body);
+    const { data, error } = await supabase
+      .from('communities')
+      .select('*')
+      .limit(1);
+    
+    if (error) throw error;
+    
+    if (data && data.length > 0) {
+      // Update existing record
+      const { data: updatedData, error: updateError } = await supabase
+        .from('communities')
+        .update(req.body)
+        .eq('id', data[0].id)
+        .select();
+      
+      if (updateError) throw updateError;
+      res.json(updatedData?.[0]);
     } else {
-      community.reddits = req.body.reddits || community.reddits;
-      community.discords = req.body.discords || community.discords;
+      // Insert new record
+      const { data: insertedData, error: insertError } = await supabase
+        .from('communities')
+        .insert([req.body])
+        .select();
+      
+      if (insertError) throw insertError;
+      res.json(insertedData?.[0]);
     }
-    await community.save();
-    res.json(community);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
