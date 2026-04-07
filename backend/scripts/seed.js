@@ -1,9 +1,11 @@
-const mongoose = require('mongoose');
-const Tool = require('../models/Tool');
-const Person = require('../models/Person');
-const Blog = require('../models/Blog');
-const Community = require('../models/Community');
-require('dotenv').config();
+import mongoose from 'mongoose';
+import Tool from '../models/Tool.js';
+import Person from '../models/Person.js';
+import Blog from '../models/Blog.js';
+import Community from '../models/Community.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const toolsData = [
   // Static Analysis Tools

@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const redditSchema = new mongoose.Schema({
   name: {
@@ -49,4 +49,4 @@ const communitySchema = new mongoose.Schema({
   timestamps: true
 });
 
-module.exports = mongoose.model('Community', communitySchema);
+export default mongoose.model('Community', communitySchema);

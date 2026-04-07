@@ -1,9 +1,11 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-require('dotenv').config();
+import express from 'express';
+import mongoose from 'mongoose';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -27,11 +29,17 @@ mongoose.connect(mongoUri)
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
-app.use('/api/tools', require('./routes/tools'));
-app.use('/api/people', require('./routes/people'));
-app.use('/api/blogs', require('./routes/blogs'));
-app.use('/api/communities', require('./routes/communities'));
-app.use('/api/proxy', require('./routes/proxy'));
+import toolsRouter from './routes/tools.js';
+import peopleRouter from './routes/people.js';
+import blogsRouter from './routes/blogs.js';
+import communitiesRouter from './routes/communities.js';
+import proxyRouter from './routes/proxy.js';
+
+app.use('/api/tools', toolsRouter);
+app.use('/api/people', peopleRouter);
+app.use('/api/blogs', blogsRouter);
+app.use('/api/communities', communitiesRouter);
+app.use('/api/proxy', proxyRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -44,6 +52,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+export default app;
