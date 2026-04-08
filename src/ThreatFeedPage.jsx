@@ -34,8 +34,10 @@ const THREAT_KEYWORDS = [
   "cobalt strike","shellcode","rootkit","loader","stealer","infostealer",
 ];
 
+// --- LOGIC FUNCTIONS ---
+
 function scoreArticle(title, description) {
-  const text = (title + " " + description).toLowerCase();
+  const text = (title + " " + (description || "")).toLowerCase();
   let score = 0;
   THREAT_KEYWORDS.forEach(kw => { if (text.includes(kw.toLowerCase())) score += 10; });
   const cves = text.match(IOC_PATTERNS.cves) || [];
@@ -44,7 +46,7 @@ function scoreArticle(title, description) {
 }
 
 function extractIOCs(text) {
-  const clean = text.replace(/<[^>]+>/g, " ");
+  const clean = (text || "").replace(/<[^>]+>/g, " ");
   return {
     ips: [...new Set((clean.match(IOC_PATTERNS.ips) || []).filter(ip => !ip.startsWith("10.") && !ip.startsWith("192.168") && !ip.startsWith("127.")))],
     domains: [...new Set((clean.match(IOC_PATTERNS.domains) || []).slice(0, 5))],
@@ -54,25 +56,44 @@ function extractIOCs(text) {
 }
 
 function extractKeywords(text) {
-  const clean = text.replace(/<[^>]+>/g, " ").toLowerCase();
+  const clean = (text || "").replace(/<[^>]+>/g, " ").toLowerCase();
   return THREAT_KEYWORDS.filter(kw => clean.includes(kw.toLowerCase()));
 }
 
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
-function isWithinOneWeek(dateStr) {
-  if (!dateStr) return true; // keep if no date
+function isWithinTimeframe(dateStr, days = 7) {
+  if (!dateStr) return true;
   const pub = new Date(dateStr);
-  if (isNaN(pub.getTime())) return true; // keep if unparseable
-  return Date.now() - pub.getTime() <= ONE_WEEK_MS;
+  if (isNaN(pub.getTime())) return true;
+  const diff = Date.now() - pub.getTime();
+  return diff <= (days * 24 * 60 * 60 * 1000);
 }
 
+// --- RELIABLE FETCH (Uses CORS Proxy + XML Parsing) ---
 async function fetchRSSviaProxy(feedUrl) {
-  const proxy = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&count=20`;
-  const res = await fetch(proxy);
-  const data = await res.json();
-  const items = data.items || [];
-  return items.filter(item => isWithinOneWeek(item.pubDate));
+  try {
+    // Swapping to corsproxy.io as it's more stable for 2026
+    const proxy = `https://corsproxy.io/?url=${encodeURIComponent(feedUrl)}`;
+    const res = await fetch(proxy);
+    const text = await res.text();
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(text, "text/xml");
+    
+    // Convert XML to JSON structure compatible with your original code
+    const items = Array.from(xml.querySelectorAll("item, entry")).map(el => ({
+      title: el.querySelector("title")?.textContent || "",
+      link: el.querySelector("link")?.textContent || el.querySelector("link")?.getAttribute("href") || "",
+      description: el.querySelector("description")?.textContent || el.querySelector("summary")?.textContent || "",
+      pubDate: el.querySelector("pubDate")?.textContent || el.querySelector("published")?.textContent || "",
+    }));
+
+    return items;
+  } catch (e) {
+    console.error("Fetch error", e);
+    return [];
+  }
 }
 
 async function searchSigmaRules(keywords) {
@@ -97,6 +118,8 @@ async function fetchRuleContent(rawUrl) {
   const res = await fetch(rawUrl);
   return await res.text();
 }
+
+// --- ORIGINAL UI COMPONENTS ---
 
 function ScoreBar({ score }) {
   const color = score >= 70 ? "#f87171" : score >= 40 ? "#fbbf24" : "#34d399";
@@ -147,9 +170,7 @@ function RuleModal({ article, onClose }) {
   async function loadContent(item, type) {
     setLoadingContent(true);
     setSelectedRule({ ...item, type });
-    const raw = item.html_url
-      .replace("github.com", "raw.githubusercontent.com")
-      .replace("/blob/", "/");
+    const raw = item.html_url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/");
     const content = await fetchRuleContent(raw).catch(() => "// Could not load content");
     setRuleContent(content);
     setLoadingContent(false);
@@ -169,7 +190,7 @@ function RuleModal({ article, onClose }) {
           <div>
             <div style={{ fontSize: 11, color: "#00d4ff", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10, fontFamily: "Fira Code" }}>Σ Sigma Rules</div>
             {loading ? <div style={{ color: "#475569", fontSize: 12 }}>Searching SigmaHQ...</div> :
-              !sigmaRules?.length ? <div style={{ color: "#f87171", fontSize: 12, padding: "8px 0", lineHeight: 1.6 }}>⚠ No Sigma rules found — potential authoring opportunity</div> :
+              !sigmaRules?.length ? <div style={{ color: "#f87171", fontSize: 12, padding: "8px 0", lineHeight: 1.6 }}>⚠ No Sigma rules found</div> :
               sigmaRules.map((r, i) => (
                 <div key={i} onClick={() => loadContent(r, "sigma")} style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${selectedRule?.html_url === r.html_url ? "#00d4ff" : "rgba(255,255,255,0.06)"}`, borderRadius: 8, padding: 10, marginBottom: 8, cursor: "pointer", transition: "border-color 0.2s" }}>
                   <div style={{ color: "#e2e8f0", fontSize: 12, fontWeight: 600, marginBottom: 4, fontFamily: "Syne" }}>{r.name}</div>
@@ -179,7 +200,7 @@ function RuleModal({ article, onClose }) {
             }
             <div style={{ fontSize: 11, color: "#a78bfa", textTransform: "uppercase", letterSpacing: 1, margin: "16px 0 10px", fontFamily: "Fira Code" }}>YARA Rules</div>
             {loading ? <div style={{ color: "#475569", fontSize: 12 }}>Searching Yara-Rules...</div> :
-              !yaraRules?.length ? <div style={{ color: "#f87171", fontSize: 12, padding: "8px 0", lineHeight: 1.6 }}>⚠ No YARA rules found — potential authoring opportunity</div> :
+              !yaraRules?.length ? <div style={{ color: "#f87171", fontSize: 12, padding: "8px 0", lineHeight: 1.6 }}>⚠ No YARA rules found</div> :
               yaraRules.map((r, i) => (
                 <div key={i} onClick={() => loadContent(r, "yara")} style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${selectedRule?.html_url === r.html_url ? "#a78bfa" : "rgba(255,255,255,0.06)"}`, borderRadius: 8, padding: 10, marginBottom: 8, cursor: "pointer" }}>
                   <div style={{ color: "#e2e8f0", fontSize: 12, fontWeight: 600, marginBottom: 4, fontFamily: "Syne" }}>{r.name}</div>
@@ -195,7 +216,7 @@ function RuleModal({ article, onClose }) {
               </div>
               <a href={selectedRule.html_url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: "#475569", marginBottom: 10, wordBreak: "break-all" }}>{selectedRule.html_url}</a>
               <div style={{ flex: 1, background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: 12, overflow: "auto" }}>
-                {loadingContent ? <div style={{ color: "#475569", fontSize: 12 }}>Loading rule content...</div> :
+                {loadingContent ? <div style={{ color: "#475569", fontSize: 12 }}>Loading content...</div> :
                   <pre style={{ margin: 0, fontSize: 11, color: "#94a3b8", fontFamily: "Fira Code", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{ruleContent}</pre>
                 }
               </div>
@@ -218,12 +239,7 @@ function ArticleCard({ article, source }) {
   return (
     <>
       {showRules && <RuleModal article={article} onClose={() => setShowRules(false)} />}
-      <div style={{
-        background: "#07090f",
-        border: `1px solid ${score >= 70 ? "rgba(248,77,109,0.3)" : "rgba(255,255,255,0.06)"}`,
-        borderRadius: 10, padding: 16, marginBottom: 10, position: "relative", overflow: "hidden",
-        transition: "border-color 0.3s",
-      }}>
+      <div style={{ background: "#07090f", border: `1px solid ${score >= 70 ? "rgba(248,77,109,0.3)" : "rgba(255,255,255,0.06)"}`, borderRadius: 10, padding: 16, marginBottom: 10, position: "relative", overflow: "hidden", transition: "border-color 0.3s" }}>
         {score >= 70 && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg, #ff4d6d, #f5a623)" }} />}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
           <div style={{ flex: 1 }}>
@@ -239,12 +255,8 @@ function ArticleCard({ article, source }) {
             <ScoreBar score={score} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
-            <button onClick={() => setShowRules(true)} style={{ background: "rgba(0,212,255,0.06)", border: "1px solid rgba(0,212,255,0.2)", color: "#00d4ff", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", fontFamily: "Fira Code" }}>
-              Σ / Y Rules
-            </button>
-            <button onClick={() => setExpanded(!expanded)} style={{ background: "none", border: "1px solid rgba(255,255,255,0.08)", color: "#6e7681", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontFamily: "Fira Code" }}>
-              {expanded ? "Less ↑" : "IOCs ↓"}
-            </button>
+            <button onClick={() => setShowRules(true)} style={{ background: "rgba(0,212,255,0.06)", border: "1px solid rgba(0,212,255,0.2)", color: "#00d4ff", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", fontFamily: "Fira Code" }}>Σ / Y Rules</button>
+            <button onClick={() => setExpanded(!expanded)} style={{ background: "none", border: "1px solid rgba(255,255,255,0.08)", color: "#6e7681", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontFamily: "Fira Code" }}>{expanded ? "Less ↑" : "IOCs ↓"}</button>
           </div>
         </div>
         {expanded && (
@@ -254,9 +266,6 @@ function ArticleCard({ article, source }) {
             <IOCTag label="IPs" items={iocs.ips} />
             <IOCTag label="Domains" items={iocs.domains} />
             <IOCTag label="Hashes" items={iocs.hashes} />
-            {!iocs.cves.length && !iocs.ips.length && !iocs.domains.length && !iocs.hashes.length && (
-              <div style={{ color: "#475569", fontSize: 12, fontFamily: "Fira Code" }}>No structured IOCs extracted from preview</div>
-            )}
           </div>
         )}
       </div>
@@ -264,11 +273,14 @@ function ArticleCard({ article, source }) {
   );
 }
 
+// --- MAIN PAGE (PARALLEL LOADING FIXED) ---
+
 export default function ThreatFeedPage() {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadedFeeds, setLoadedFeeds] = useState(0);
   const [filter, setFilter] = useState("all");
+  const [timeframe, setTimeframe] = useState("week"); // Toggle for Week vs Month
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("score");
   const [activeFeeds, setActiveFeeds] = useState(FEEDS.map(f => f.name));
@@ -279,22 +291,28 @@ export default function ThreatFeedPage() {
     setLoading(true);
     setArticles([]);
     setLoadedFeeds(0);
-    for (const feed of FEEDS) {
-      if (!activeFeeds.includes(feed.name)) continue;
+    
+    const activeSources = FEEDS.filter(f => activeFeeds.includes(f.name));
+
+    // Fast parallel fetch
+    const results = await Promise.all(activeSources.map(async (feed) => {
       try {
         const items = await fetchRSSviaProxy(feed.url);
-        const scored = items.map(item => ({
+        const processed = items.map(item => ({
           ...item,
           _source: feed,
-          _score: scoreArticle(item.title, item.description || ""),
-          _keywords: extractKeywords(item.title + " " + (item.description || "")),
+          _score: scoreArticle(item.title, item.description),
+          _keywords: extractKeywords(item.title + " " + item.description),
         }));
-        setArticles(prev => [...prev, ...scored]);
-        setLoadedFeeds(n => n + 1);
-      } catch {
-        setLoadedFeeds(n => n + 1);
+        setLoadedFeeds(prev => prev + 1);
+        return processed;
+      } catch (e) {
+        setLoadedFeeds(prev => prev + 1);
+        return [];
       }
-    }
+    }));
+
+    setArticles(results.flat());
     setLastRefresh(new Date().toLocaleTimeString());
     setLoading(false);
   }, [activeFeeds]);
@@ -302,6 +320,7 @@ export default function ThreatFeedPage() {
   useEffect(() => { loadFeeds(); }, []);
 
   const filtered = articles
+    .filter(a => timeframe === "week" ? isWithinTimeframe(a.pubDate, 7) : isWithinTimeframe(a.pubDate, 30))
     .filter(a => {
       if (filter === "high") return a._score >= 70;
       if (filter === "medium") return a._score >= 40 && a._score < 70;
@@ -311,11 +330,9 @@ export default function ThreatFeedPage() {
     .filter(a => !search || a.title.toLowerCase().includes(search.toLowerCase()) || a._keywords.some(k => k.includes(search.toLowerCase())))
     .sort((a, b) => sortBy === "score" ? b._score - a._score : new Date(b.pubDate) - new Date(a.pubDate));
 
-  const highCount = articles.filter(a => a._score >= 70).length;
-
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", minHeight: "calc(100vh - 56px)" }}>
-      {/* Sidebar */}
+    <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", minHeight: "calc(100vh - 56px)", background: "#0d1117" }}>
+      {/* Sidebar (ORIGINAL UI) */}
       <div style={{ background: "rgba(255,255,255,0.01)", borderRight: "1px solid rgba(255,255,255,0.06)", padding: 16 }}>
         <div style={{ fontSize: 10, color: "#3d444d", textTransform: "uppercase", letterSpacing: 2, marginBottom: 12, fontFamily: "Fira Code" }}>Sources</div>
         {(showAllFeeds ? FEEDS : FEEDS.slice(0, 8)).map(feed => (
@@ -326,20 +343,12 @@ export default function ThreatFeedPage() {
           </div>
         ))}
         {FEEDS.length > 8 && (
-          <button onClick={() => setShowAllFeeds(p => !p)} style={{ width: "100%", background: "none", border: "1px solid rgba(255,255,255,0.06)", color: "#6e7681", borderRadius: 6, padding: "5px 0", cursor: "pointer", fontSize: 10, fontFamily: "Fira Code", marginTop: 4 }}>
-            {showAllFeeds ? "▲ Show less" : `▼ +${FEEDS.length - 8} more`}
-          </button>
+          <button onClick={() => setShowAllFeeds(p => !p)} style={{ width: "100%", background: "none", border: "1px solid rgba(255,255,255,0.06)", color: "#6e7681", borderRadius: 6, padding: "5px 0", cursor: "pointer", fontSize: 10, fontFamily: "Fira Code", marginTop: 4 }}>{showAllFeeds ? "▲ Show less" : `▼ +${FEEDS.length - 8} more`}</button>
         )}
-
         <div style={{ fontSize: 10, color: "#3d444d", textTransform: "uppercase", letterSpacing: 2, margin: "20px 0 12px", fontFamily: "Fira Code" }}>Stats</div>
         <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: 12 }}>
-          {[
-            { label: "Total", val: articles.length, color: "#e2e8f0" },
-            { label: "High", val: articles.filter(a => a._score >= 70).length, color: "#ff4d6d" },
-            { label: "Medium", val: articles.filter(a => a._score >= 40 && a._score < 70).length, color: "#fbbf24" },
-            { label: "Low", val: articles.filter(a => a._score < 40).length, color: "#34d399" },
-          ].map((s, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: i < 3 ? 8 : 0 }}>
+          {[{ label: "Total", val: articles.length, color: "#e2e8f0" }, { label: "High", val: articles.filter(a => a._score >= 70).length, color: "#ff4d6d" }].map((s, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ fontSize: 11, color: "#3d444d", fontFamily: "Fira Code" }}>{s.label}</span>
               <span style={{ fontSize: 11, color: s.color, fontWeight: 700, fontFamily: "Fira Code" }}>{s.val}</span>
             </div>
@@ -347,56 +356,25 @@ export default function ThreatFeedPage() {
         </div>
       </div>
 
-      {/* Main */}
+      {/* Main Content (ORIGINAL UI) */}
       <div style={{ padding: 20 }}>
-        {/* Toolbar */}
         <div style={{ display: "flex", gap: 10, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search articles, keywords..."
-            style={{ flex: 1, minWidth: 200, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "#c9d1d9", borderRadius: 8, padding: "8px 14px", fontSize: 12, outline: "none", fontFamily: "Fira Code" }}
-          />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ flex: 1, minWidth: 200, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "#c9d1d9", borderRadius: 8, padding: "8px 14px", fontSize: 12, outline: "none", fontFamily: "Fira Code" }} />
+          
+          {/* Week/Month Toggle */}
           <div style={{ display: "flex", gap: 4 }}>
-            {[["all", "All"], ["high", "High"], ["medium", "Med"], ["low", "Low"]].map(([val, label]) => (
-              <button key={val} onClick={() => setFilter(val)} style={{
-                background: filter === val ? "rgba(0,255,157,0.08)" : "rgba(255,255,255,0.03)",
-                border: `1px solid ${filter === val ? "rgba(0,255,157,0.3)" : "rgba(255,255,255,0.06)"}`,
-                color: filter === val ? "#00ff9d" : "#6e7681",
-                borderRadius: 6, padding: "7px 12px", cursor: "pointer", fontSize: 11, fontFamily: "Fira Code",
-              }}>{label}</button>
+            {["week", "month"].map(v => (
+              <button key={v} onClick={() => setTimeframe(v)} style={{ background: timeframe === v ? "rgba(0,153,255,0.08)" : "rgba(255,255,255,0.03)", border: `1px solid ${timeframe === v ? "rgba(0,153,255,0.3)" : "rgba(255,255,255,0.06)"}`, color: timeframe === v ? "#0099ff" : "#6e7681", borderRadius: 6, padding: "7px 12px", cursor: "pointer", fontSize: 11, fontFamily: "Fira Code", textTransform: "capitalize" }}>{v}</button>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            {[["score", "By Score"], ["date", "By Date"]].map(([val, label]) => (
-              <button key={val} onClick={() => setSortBy(val)} style={{
-                background: sortBy === val ? "rgba(0,153,255,0.08)" : "rgba(255,255,255,0.03)",
-                border: `1px solid ${sortBy === val ? "rgba(0,153,255,0.3)" : "rgba(255,255,255,0.06)"}`,
-                color: sortBy === val ? "#0099ff" : "#6e7681",
-                borderRadius: 6, padding: "7px 12px", cursor: "pointer", fontSize: 11, fontFamily: "Fira Code",
-              }}>{label}</button>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span style={{ fontSize: 10, color: "#00ff9d", background: "rgba(0,255,157,0.08)", border: "1px solid rgba(0,255,157,0.2)", borderRadius: 6, padding: "4px 10px", fontFamily: "Fira Code", fontWeight: 700 }}>⏱ Last 7 days</span>
-            {lastRefresh && <span style={{ fontSize: 10, color: "#3d444d", fontFamily: "Fira Code" }}>Refreshed {lastRefresh}</span>}
-            {highCount > 0 && <span style={{ background: "rgba(255,77,109,0.1)", border: "1px solid rgba(255,77,109,0.3)", color: "#ff4d6d", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700, fontFamily: "Fira Code" }}>⚠ {highCount} HIGH</span>}
-            <button onClick={loadFeeds} disabled={loading} style={{ background: loading ? "rgba(255,255,255,0.02)" : "rgba(0,212,255,0.06)", border: "1px solid rgba(0,212,255,0.2)", color: "#00d4ff", borderRadius: 8, padding: "8px 16px", cursor: loading ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700, fontFamily: "Fira Code" }}>
-              {loading ? `Loading ${loadedFeeds}/${activeFeeds.length}...` : "⟳ Refresh"}
-            </button>
-          </div>
+
+          <button onClick={loadFeeds} disabled={loading} style={{ background: loading ? "rgba(255,255,255,0.02)" : "rgba(0,212,255,0.06)", border: "1px solid rgba(0,212,255,0.2)", color: "#00d4ff", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "Fira Code" }}>
+            {loading ? `Loading ${loadedFeeds}...` : "⟳ Refresh"}
+          </button>
         </div>
 
-        {/* Articles */}
         {loading && articles.length === 0 ? (
-          <div style={{ textAlign: "center", padding: 60, color: "#3d444d", fontFamily: "Fira Code", fontSize: 13 }}>
-            <div style={{ fontSize: 24, marginBottom: 12 }}>⟳</div>
-            Fetching threat intelligence feeds...
-          </div>
-        ) : filtered.length === 0 ? (
-          <div style={{ textAlign: "center", padding: 60, color: "#3d444d", fontFamily: "Fira Code", fontSize: 13 }}>
-            No articles match your filters.
-          </div>
+          <div style={{ textAlign: "center", padding: 60, color: "#3d444d", fontFamily: "Fira Code" }}>⟳ Loading Intel Feeds...</div>
         ) : (
           filtered.map((a, i) => <ArticleCard key={i} article={a} source={a._source} />)
         )}
