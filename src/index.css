@@ -24,8 +24,10 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
 
-  @media (max-width: 1024px) {
+@media (max-width: 1024px) {
+  :root {
     font-size: 16px;
   }
 }
@@ -50,8 +52,14 @@
   }
 }
 
-body {
+/* FIX: Ensure html and body take up full height 
+   and use the background variable to prevent white flashes/gaps.
+*/
+html, body {
+  height: 100%;
   margin: 0;
+  padding: 0;
+  background-color: var(--bg);
 }
 
 #root {
@@ -64,6 +72,12 @@ body {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  background-color: var(--bg);
+  
+  /* FIX: Prevents "Margin Collapse" where h1 margins 
+     push the whole container down from the top.
+  */
+  display: flow-root; 
 }
 
 h1,
@@ -76,21 +90,30 @@ h2 {
 h1 {
   font-size: 56px;
   letter-spacing: -1.68px;
+  /* Adjusting margins to ensure no overflow issues */
   margin: 32px 0;
-  @media (max-width: 1024px) {
+}
+
+@media (max-width: 1024px) {
+  h1 {
     font-size: 36px;
     margin: 20px 0;
   }
 }
+
 h2 {
   font-size: 24px;
   line-height: 118%;
   letter-spacing: -0.24px;
   margin: 0 0 8px;
-  @media (max-width: 1024px) {
+}
+
+@media (max-width: 1024px) {
+  h2 {
     font-size: 20px;
   }
 }
+
 p {
   margin: 0;
 }
