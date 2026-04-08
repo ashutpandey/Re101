@@ -1,4 +1,5 @@
 :root {
+  /* Colors */
   --text: #6b6375;
   --text-h: #08060d;
   --bg: #fff;
@@ -8,10 +9,9 @@
   --accent-bg: rgba(170, 59, 255, 0.1);
   --accent-border: rgba(170, 59, 255, 0.5);
   --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px,
-    rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --shadow: rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
+  /* Fonts */
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
@@ -27,14 +27,12 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Responsive font */
 @media (max-width: 1024px) {
   :root {
     font-size: 16px;
   }
 }
 
-/* Dark mode */
 @media (prefers-color-scheme: dark) {
   :root {
     --text: #9ca3af;
@@ -46,9 +44,7 @@
     --accent-bg: rgba(192, 132, 252, 0.15);
     --accent-border: rgba(192, 132, 252, 0.5);
     --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px,
-      rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+    --shadow: rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
   }
 
   #social .button-icon {
@@ -56,50 +52,57 @@
   }
 }
 
-/* Ensure full viewport usage */
-html,
-body {
+/* FULL VIEWPORT CORE LOGIC 
+*/
+html, body {
   height: 100%;
   margin: 0;
   padding: 0;
   background-color: var(--bg);
+  overflow-x: hidden; /* Prevents unwanted horizontal scrollbars */
 }
 
-/* Root container */
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
+  /* Stretch to full viewport width and height */
+  width: 100%; 
+  min-height: 100vh;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
   background-color: var(--bg);
+  box-sizing: border-box;
+  
+  /* Removes the side borders that were boxing the layout */
+  border-inline: none; 
+}
 
-  /* Prevent margin collapse safely */
-  padding-top: 1px;
+/* If you have a container class, this ensures it also 
+   spans the full width without a pixel cap.
+*/
+.container {
+  width: 100%;
+  padding: 0 40px; /* Provides some breathing room at the edges */
+  box-sizing: border-box;
 }
 
 /* Typography */
-h1,
-h2 {
+h1, h2 {
   font-family: var(--heading);
   font-weight: 500;
   color: var(--text-h);
+  text-align: center; /* Keeps headings centered in the wide view */
 }
 
 h1 {
   font-size: 56px;
   letter-spacing: -1.68px;
-  margin: 32px 0;
+  margin: 48px 0 24px;
 }
 
 @media (max-width: 1024px) {
   h1 {
     font-size: 36px;
-    margin: 20px 0;
+    margin: 32px 0 16px;
   }
 }
 
@@ -110,19 +113,11 @@ h2 {
   margin: 0 0 8px;
 }
 
-@media (max-width: 1024px) {
-  h2 {
-    font-size: 20px;
-  }
-}
-
 p {
   margin: 0;
 }
 
-/* Code styling */
-code,
-.counter {
+code, .counter {
   font-family: var(--mono);
   display: inline-flex;
   border-radius: 4px;
@@ -134,9 +129,4 @@ code {
   line-height: 135%;
   padding: 4px 8px;
   background: var(--code-bg);
-}
-
-/* Optional: Ensure main content stretches */
-main {
-  flex: 1;
 }
