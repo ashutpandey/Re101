@@ -60,9 +60,6 @@ function extractKeywords(text) {
   return THREAT_KEYWORDS.filter(kw => clean.includes(kw.toLowerCase()));
 }
 
-const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
-
 function isWithinTimeframe(dateStr, days = 7) {
   if (!dateStr) return true;
   const pub = new Date(dateStr);
@@ -71,55 +68,84 @@ function isWithinTimeframe(dateStr, days = 7) {
   return diff <= (days * 24 * 60 * 60 * 1000);
 }
 
-// --- RELIABLE FETCH (Uses CORS Proxy + XML Parsing) ---
+// --- RELIABLE FETCH ---
+// FIX: Atom feeds use <link href="..."> with no text content — must read the href attribute.
 async function fetchRSSviaProxy(feedUrl) {
   try {
-    // Swapping to corsproxy.io as it's more stable for 2026
     const proxy = `https://corsproxy.io/?url=${encodeURIComponent(feedUrl)}`;
     const res = await fetch(proxy);
+    if (!res.ok) return [];
     const text = await res.text();
     const parser = new DOMParser();
     const xml = parser.parseFromString(text, "text/xml");
-    
-    // Convert XML to JSON structure compatible with your original code
-    const items = Array.from(xml.querySelectorAll("item, entry")).map(el => ({
-      title: el.querySelector("title")?.textContent || "",
-      link: el.querySelector("link")?.textContent || el.querySelector("link")?.getAttribute("href") || "",
-      description: el.querySelector("description")?.textContent || el.querySelector("summary")?.textContent || "",
-      pubDate: el.querySelector("pubDate")?.textContent || el.querySelector("published")?.textContent || "",
-    }));
+
+    const items = Array.from(xml.querySelectorAll("item, entry")).map(el => {
+      // Handle both RSS <link> (text node) and Atom <link href="..."> (attribute)
+      const linkEl = el.querySelector("link");
+      const link =
+        linkEl?.getAttribute("href") ||   // Atom
+        linkEl?.textContent?.trim() ||    // RSS
+        "";
+
+      return {
+        title: el.querySelector("title")?.textContent?.trim() || "",
+        link,
+        description:
+          el.querySelector("description")?.textContent ||
+          el.querySelector("summary")?.textContent ||
+          el.querySelector("content")?.textContent ||
+          "",
+        pubDate:
+          el.querySelector("pubDate")?.textContent ||
+          el.querySelector("published")?.textContent ||
+          el.querySelector("updated")?.textContent ||
+          "",
+      };
+    });
 
     return items;
   } catch (e) {
-    console.error("Fetch error", e);
+    console.error("Fetch error", feedUrl, e);
     return [];
   }
 }
 
+// FIX: GitHub Search API returns 403/422 when rate-limited; guard against non-JSON / error responses.
 async function searchSigmaRules(keywords) {
   const query = keywords.slice(0, 2).join("+");
-  if (!query) return null;
-  const url = `https://api.github.com/search/code?q=${encodeURIComponent(query)}+repo:SigmaHQ/sigma+extension:yml&per_page=3`;
-  const res = await fetch(url, { headers: { Accept: "application/vnd.github+json" } });
-  const data = await res.json();
-  return data.items || [];
+  if (!query) return [];
+  try {
+    const url = `https://api.github.com/search/code?q=${encodeURIComponent(query)}+repo:SigmaHQ/sigma+extension:yml&per_page=3`;
+    const res = await fetch(url, { headers: { Accept: "application/vnd.github+json" } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.items || [];
+  } catch {
+    return [];
+  }
 }
 
 async function searchYARARules(keywords) {
   const query = keywords.slice(0, 2).join("+");
-  if (!query) return null;
-  const url = `https://api.github.com/search/code?q=${encodeURIComponent(query)}+repo:Yara-Rules/rules+extension:yar&per_page=3`;
-  const res = await fetch(url, { headers: { Accept: "application/vnd.github+json" } });
-  const data = await res.json();
-  return data.items || [];
+  if (!query) return [];
+  try {
+    const url = `https://api.github.com/search/code?q=${encodeURIComponent(query)}+repo:Yara-Rules/rules+extension:yar&per_page=3`;
+    const res = await fetch(url, { headers: { Accept: "application/vnd.github+json" } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.items || [];
+  } catch {
+    return [];
+  }
 }
 
 async function fetchRuleContent(rawUrl) {
   const res = await fetch(rawUrl);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return await res.text();
 }
 
-// --- ORIGINAL UI COMPONENTS ---
+// --- UI COMPONENTS ---
 
 function ScoreBar({ score }) {
   const color = score >= 70 ? "#f87171" : score >= 40 ? "#fbbf24" : "#34d399";
@@ -157,11 +183,11 @@ function RuleModal({ article, onClose }) {
     async function load() {
       const kws = extractKeywords(article.title + " " + article.description);
       const [sigma, yara] = await Promise.all([
-        searchSigmaRules(kws).catch(() => []),
-        searchYARARules(kws).catch(() => []),
+        searchSigmaRules(kws),
+        searchYARARules(kws),
       ]);
-      setSigmaRules(sigma || []);
-      setYaraRules(yara || []);
+      setSigmaRules(sigma);
+      setYaraRules(yara);
       setLoading(false);
     }
     load();
@@ -170,7 +196,9 @@ function RuleModal({ article, onClose }) {
   async function loadContent(item, type) {
     setLoadingContent(true);
     setSelectedRule({ ...item, type });
-    const raw = item.html_url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/");
+    const raw = item.html_url
+      .replace("github.com", "raw.githubusercontent.com")
+      .replace("/blob/", "/");
     const content = await fetchRuleContent(raw).catch(() => "// Could not load content");
     setRuleContent(content);
     setLoadingContent(false);
@@ -228,12 +256,13 @@ function RuleModal({ article, onClose }) {
   );
 }
 
+// FIX: Use pre-computed article._score instead of re-running scoreArticle on every render.
 function ArticleCard({ article, source }) {
   const [expanded, setExpanded] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const iocs = extractIOCs(article.description || "");
-  const keywords = extractKeywords(article.title + " " + (article.description || ""));
-  const score = scoreArticle(article.title, article.description || "");
+  const keywords = article._keywords;
+  const score = article._score;
   const cleanDesc = (article.description || "").replace(/<[^>]+>/g, "").slice(0, 220);
 
   return (
@@ -273,28 +302,28 @@ function ArticleCard({ article, source }) {
   );
 }
 
-// --- MAIN PAGE (PARALLEL LOADING FIXED) ---
+// --- MAIN PAGE ---
 
 export default function ThreatFeedPage() {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadedFeeds, setLoadedFeeds] = useState(0);
   const [filter, setFilter] = useState("all");
-  const [timeframe, setTimeframe] = useState("week"); // Toggle for Week vs Month
+  const [timeframe, setTimeframe] = useState("week");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("score");
   const [activeFeeds, setActiveFeeds] = useState(FEEDS.map(f => f.name));
   const [showAllFeeds, setShowAllFeeds] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
 
+  // FIX: loadFeeds depends on activeFeeds — include it in deps so the ref is always fresh.
   const loadFeeds = useCallback(async () => {
     setLoading(true);
     setArticles([]);
     setLoadedFeeds(0);
-    
+
     const activeSources = FEEDS.filter(f => activeFeeds.includes(f.name));
 
-    // Fast parallel fetch
     const results = await Promise.all(activeSources.map(async (feed) => {
       try {
         const items = await fetchRSSviaProxy(feed.url);
@@ -306,18 +335,27 @@ export default function ThreatFeedPage() {
         }));
         setLoadedFeeds(prev => prev + 1);
         return processed;
-      } catch (e) {
+      } catch {
         setLoadedFeeds(prev => prev + 1);
         return [];
       }
     }));
 
-    setArticles(results.flat());
+    // FIX: Deduplicate articles by link to prevent duplicates on re-fetch.
+    const seen = new Set();
+    const deduped = results.flat().filter(a => {
+      if (!a.link || seen.has(a.link)) return false;
+      seen.add(a.link);
+      return true;
+    });
+
+    setArticles(deduped);
     setLastRefresh(new Date().toLocaleTimeString());
     setLoading(false);
-  }, [activeFeeds]);
+  }, [activeFeeds]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadFeeds(); }, []);
+  // FIX: Depend on loadFeeds so initial load always uses current activeFeeds.
+  useEffect(() => { loadFeeds(); }, [loadFeeds]);
 
   const filtered = articles
     .filter(a => timeframe === "week" ? isWithinTimeframe(a.pubDate, 7) : isWithinTimeframe(a.pubDate, 30))
@@ -332,7 +370,7 @@ export default function ThreatFeedPage() {
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", minHeight: "calc(100vh - 56px)", background: "#0d1117" }}>
-      {/* Sidebar (ORIGINAL UI) */}
+      {/* Sidebar */}
       <div style={{ background: "rgba(255,255,255,0.01)", borderRight: "1px solid rgba(255,255,255,0.06)", padding: 16 }}>
         <div style={{ fontSize: 10, color: "#3d444d", textTransform: "uppercase", letterSpacing: 2, marginBottom: 12, fontFamily: "Fira Code" }}>Sources</div>
         {(showAllFeeds ? FEEDS : FEEDS.slice(0, 8)).map(feed => (
@@ -347,20 +385,26 @@ export default function ThreatFeedPage() {
         )}
         <div style={{ fontSize: 10, color: "#3d444d", textTransform: "uppercase", letterSpacing: 2, margin: "20px 0 12px", fontFamily: "Fira Code" }}>Stats</div>
         <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: 12 }}>
-          {[{ label: "Total", val: articles.length, color: "#e2e8f0" }, { label: "High", val: articles.filter(a => a._score >= 70).length, color: "#ff4d6d" }].map((s, i) => (
+          {[
+            { label: "Total", val: articles.length, color: "#e2e8f0" },
+            { label: "High", val: articles.filter(a => a._score >= 70).length, color: "#ff4d6d" },
+          ].map((s, i) => (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ fontSize: 11, color: "#3d444d", fontFamily: "Fira Code" }}>{s.label}</span>
               <span style={{ fontSize: 11, color: s.color, fontWeight: 700, fontFamily: "Fira Code" }}>{s.val}</span>
             </div>
           ))}
+          {lastRefresh && (
+            <div style={{ fontSize: 10, color: "#3d444d", marginTop: 4, fontFamily: "Fira Code" }}>Updated {lastRefresh}</div>
+          )}
         </div>
       </div>
 
-      {/* Main Content (ORIGINAL UI) */}
+      {/* Main Content */}
       <div style={{ padding: 20 }}>
         <div style={{ display: "flex", gap: 10, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ flex: 1, minWidth: 200, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "#c9d1d9", borderRadius: 8, padding: "8px 14px", fontSize: 12, outline: "none", fontFamily: "Fira Code" }} />
-          
+
           {/* Week/Month Toggle */}
           <div style={{ display: "flex", gap: 4 }}>
             {["week", "month"].map(v => (
@@ -368,15 +412,24 @@ export default function ThreatFeedPage() {
             ))}
           </div>
 
-          <button onClick={loadFeeds} disabled={loading} style={{ background: loading ? "rgba(255,255,255,0.02)" : "rgba(0,212,255,0.06)", border: "1px solid rgba(0,212,255,0.2)", color: "#00d4ff", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "Fira Code" }}>
-            {loading ? `Loading ${loadedFeeds}...` : "⟳ Refresh"}
+          {/* Score/Date Sort Toggle */}
+          <div style={{ display: "flex", gap: 4 }}>
+            {["score", "date"].map(v => (
+              <button key={v} onClick={() => setSortBy(v)} style={{ background: sortBy === v ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.02)", border: `1px solid ${sortBy === v ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.06)"}`, color: sortBy === v ? "#e2e8f0" : "#6e7681", borderRadius: 6, padding: "7px 12px", cursor: "pointer", fontSize: 11, fontFamily: "Fira Code", textTransform: "capitalize" }}>{v}</button>
+            ))}
+          </div>
+
+          <button onClick={loadFeeds} disabled={loading} style={{ background: loading ? "rgba(255,255,255,0.02)" : "rgba(0,212,255,0.06)", border: "1px solid rgba(0,212,255,0.2)", color: "#00d4ff", borderRadius: 8, padding: "8px 16px", cursor: loading ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700, fontFamily: "Fira Code" }}>
+            {loading ? `Loading ${loadedFeeds}/${FEEDS.filter(f => activeFeeds.includes(f.name)).length}...` : "⟳ Refresh"}
           </button>
         </div>
 
         {loading && articles.length === 0 ? (
           <div style={{ textAlign: "center", padding: 60, color: "#3d444d", fontFamily: "Fira Code" }}>⟳ Loading Intel Feeds...</div>
+        ) : filtered.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 60, color: "#3d444d", fontFamily: "Fira Code" }}>No articles match the current filters.</div>
         ) : (
-          filtered.map((a, i) => <ArticleCard key={i} article={a} source={a._source} />)
+          filtered.map((a, i) => <ArticleCard key={a.link || i} article={a} source={a._source} />)
         )}
       </div>
     </div>
