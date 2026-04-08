@@ -68,42 +68,23 @@ function isWithinTimeframe(dateStr, days = 7) {
   return diff <= (days * 24 * 60 * 60 * 1000);
 }
 
-// --- RELIABLE FETCH ---
-// FIX: Atom feeds use <link href="..."> with no text content — must read the href attribute.
+// --- RELIABLE FETCH via rss2json.com ---
+// Uses rss2json public API — no CORS issues, returns clean JSON, handles both RSS and Atom.
+const RSS2JSON = "https://api.rss2json.com/v1/api.json";
+
 async function fetchRSSviaProxy(feedUrl) {
   try {
-    const proxy = `https://corsproxy.io/?url=${encodeURIComponent(feedUrl)}`;
-    const res = await fetch(proxy);
+    const url = `${RSS2JSON}?rss_url=${encodeURIComponent(feedUrl)}&api_key=&count=20`;
+    const res = await fetch(url);
     if (!res.ok) return [];
-    const text = await res.text();
-    const parser = new DOMParser();
-    const xml = parser.parseFromString(text, "text/xml");
-
-    const items = Array.from(xml.querySelectorAll("item, entry")).map(el => {
-      // Handle both RSS <link> (text node) and Atom <link href="..."> (attribute)
-      const linkEl = el.querySelector("link");
-      const link =
-        linkEl?.getAttribute("href") ||   // Atom
-        linkEl?.textContent?.trim() ||    // RSS
-        "";
-
-      return {
-        title: el.querySelector("title")?.textContent?.trim() || "",
-        link,
-        description:
-          el.querySelector("description")?.textContent ||
-          el.querySelector("summary")?.textContent ||
-          el.querySelector("content")?.textContent ||
-          "",
-        pubDate:
-          el.querySelector("pubDate")?.textContent ||
-          el.querySelector("published")?.textContent ||
-          el.querySelector("updated")?.textContent ||
-          "",
-      };
-    });
-
-    return items;
+    const data = await res.json();
+    if (data.status !== "ok" || !Array.isArray(data.items)) return [];
+    return data.items.map(item => ({
+      title: item.title || "",
+      link: item.link || item.guid || "",
+      description: item.description || item.content || "",
+      pubDate: item.pubDate || "",
+    }));
   } catch (e) {
     console.error("Fetch error", feedUrl, e);
     return [];
