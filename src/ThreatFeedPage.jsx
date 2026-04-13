@@ -124,7 +124,9 @@ function scoreArticle(title, description) {
 
 // --- IOC EXTRACTION ---
 function extractIOCs(text) {
-  const clean = defang(text);
+  if (!text || text.length < 10) return { ips: [], domains: [], hashes: [], cves: [] };
+  // Truncate to 50k chars — regex on multi-MB descriptions can freeze the browser
+  const clean = defang(text.slice(0, 50000));
 
   const ips = [...new Set((clean.match(RE_IP) || []).filter(ip => !PRIVATE_IP_RE.test(ip)))];
 
@@ -156,8 +158,11 @@ function isWithinTimeframe(dateStr, days) {
 }
 
 // --- RSS FETCH ---
-// Waterfall through 4 different strategies. Each has different blocking profiles
-// so what allorigins blocks, rss2json or feedproxy often won't, and vice versa.
+// 5-proxy waterfall. Order is tuned for security blogs:
+//   corsproxy > allorigins > fetchrss > rss2json > thingproxy
+// corsproxy and allorigins handle Cloudflare-protected sites best.
+// rss2json gets 422 on many security feeds (target blocks the rss2json server IP).
+// thingproxy is a last resort — slow but different IP pool.
 
 async function timedFetch(url, opts = {}, ms = 10000) {
   const ac = new AbortController();
@@ -172,15 +177,57 @@ async function timedFetch(url, opts = {}, ms = 10000) {
   }
 }
 
-// Strategy A: rss2json.com — returns clean JSON, works for most feeds
-// Free tier: 1 req/sec, no key needed for public feeds
-async function tryRss2Json(feedUrl) {
-  const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&count=50`;
+// Returns true if response text looks like a real RSS/Atom feed
+function looksLikeFeed(text) {
+  const t = text.trim().slice(0, 200).toLowerCase();
+  return t.startsWith("<?xml") || t.startsWith("<rss") || t.startsWith("<feed") || t.includes("<channel>");
+}
+
+// Strategy 1: corsproxy.io — best success rate for Cloudflare-protected security blogs
+async function tryCorsproxy(feedUrl) {
+  const url = `https://corsproxy.io/?${encodeURIComponent(feedUrl)}`;
   const res = await timedFetch(url);
-  if (!res.ok) throw new Error(`rss2json ${res.status}`);
+  if (!res.ok) throw new Error(`corsproxy HTTP ${res.status}`);
+  const text = await res.text();
+  if (!looksLikeFeed(text)) throw new Error("corsproxy returned non-feed content");
+  return parseRSS(text);
+}
+
+// Strategy 2: allorigins.win — wraps raw XML in JSON envelope
+// Handles many feeds but maintains a blocklist of high-traffic domains
+async function tryAllOrigins(feedUrl) {
+  const url = `https://api.allorigins.win/get?url=${encodeURIComponent(feedUrl)}`;
+  const res = await timedFetch(url);
+  if (!res.ok) throw new Error(`allorigins HTTP ${res.status}`);
+  const json = await res.json();
+  // status_code 0 means blocked; contents may be empty or an HTML error page
+  if (!json.contents || !looksLikeFeed(json.contents))
+    throw new Error(`allorigins blocked (status_code=${json.status?.http_code ?? "?"})`);
+  return parseRSS(json.contents);
+}
+
+// Strategy 3: fetchrss.app — dedicated RSS proxy, handles Cloudflare & paywalls better
+async function tryFetchRss(feedUrl) {
+  const url = `https://fetchrss.app/api/feed?url=${encodeURIComponent(feedUrl)}`;
+  const res = await timedFetch(url, {}, 12000);
+  if (!res.ok) throw new Error(`fetchrss HTTP ${res.status}`);
+  const text = await res.text();
+  if (!looksLikeFeed(text)) throw new Error("fetchrss returned non-feed content");
+  return parseRSS(text);
+}
+
+// Strategy 4: rss2json.com — clean JSON output but many security sites return 422
+// because the rss2json server IPs are blocked by Cloudflare WAFs on popular security blogs.
+// Cache-buster prevents stale 422 responses being served from their cache.
+async function tryRss2Json(feedUrl) {
+  const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&count=50&_cb=${Date.now()}`;
+  const res = await timedFetch(url);
+  // 422 = target blocked rss2json's server; 403 = rate limited or blocked
+  if (res.status === 422 || res.status === 403)
+    throw new Error(`rss2json blocked by target (${res.status})`);
+  if (!res.ok) throw new Error(`rss2json HTTP ${res.status}`);
   const data = await res.json();
-  if (data.status !== "ok") throw new Error(`rss2json status: ${data.status} — ${data.message || ""}`);
-  // Normalize to our internal shape
+  if (data.status !== "ok") throw new Error(`rss2json: ${data.message || data.status}`);
   return (data.items || []).map(item => ({
     title: item.title || "",
     link: item.link || item.guid || "",
@@ -189,59 +236,41 @@ async function tryRss2Json(feedUrl) {
   }));
 }
 
-// Strategy B: allorigins.win — wraps raw XML in JSON
-async function tryAllOrigins(feedUrl) {
-  const url = `https://api.allorigins.win/get?url=${encodeURIComponent(feedUrl)}`;
-  const res = await timedFetch(url);
-  if (!res.ok) throw new Error(`allorigins ${res.status}`);
-  const json = await res.json();
-  // allorigins returns 200 but sets status 0 or returns HTML for blocked URLs
-  if (!json.contents || json.contents.trim().toLowerCase().startsWith("<!doctype html"))
-    throw new Error("allorigins blocked or empty");
-  return parseRSS(json.contents);
-}
-
-// Strategy C: corsproxy.io — raw proxy, returns XML directly
-async function tryCorsproxy(feedUrl) {
-  const url = `https://corsproxy.io/?${encodeURIComponent(feedUrl)}`;
-  const res = await timedFetch(url);
-  if (!res.ok) throw new Error(`corsproxy ${res.status}`);
-  const text = await res.text();
-  if (text.trim().toLowerCase().startsWith("<!doctype html"))
-    throw new Error("corsproxy returned HTML");
-  return parseRSS(text);
-}
-
-// Strategy D: thingproxy.freeboard.io — another open CORS proxy
+// Strategy 5: thingproxy — last resort, different IP pool, slower
 async function tryThingProxy(feedUrl) {
   const url = `https://thingproxy.freeboard.io/fetch/${feedUrl}`;
-  const res = await timedFetch(url);
-  if (!res.ok) throw new Error(`thingproxy ${res.status}`);
+  const res = await timedFetch(url, {}, 14000);
+  if (!res.ok) throw new Error(`thingproxy HTTP ${res.status}`);
   const text = await res.text();
-  if (text.trim().toLowerCase().startsWith("<!doctype html"))
-    throw new Error("thingproxy returned HTML");
+  if (!looksLikeFeed(text)) throw new Error("thingproxy returned non-feed content");
   return parseRSS(text);
 }
 
 async function fetchRSSviaProxy(feedUrl) {
   const strategies = [
-    ["rss2json",   () => tryRss2Json(feedUrl)],
-    ["allorigins", () => tryAllOrigins(feedUrl)],
     ["corsproxy",  () => tryCorsproxy(feedUrl)],
+    ["allorigins", () => tryAllOrigins(feedUrl)],
+    ["fetchrss",   () => tryFetchRss(feedUrl)],
+    ["rss2json",   () => tryRss2Json(feedUrl)],
     ["thingproxy", () => tryThingProxy(feedUrl)],
   ];
 
   for (const [name, fn] of strategies) {
     try {
       const items = await fn();
-      if (items && items.length > 0) return items;
-      // Got 0 items — could be a successful empty response or silent block, try next
+      // Only accept if we got actual articles — empty could mean a silent block
+      if (items && items.length > 0) {
+        if (name !== "corsproxy") console.info(`[feed] ${new URL(feedUrl).hostname} resolved via ${name}`);
+        return items;
+      }
+      console.warn(`[${name}] ${new URL(feedUrl).hostname}: returned 0 items, trying next`);
     } catch (e) {
       console.warn(`[${name}] ${new URL(feedUrl).hostname}: ${e.message}`);
+      // Always continue — never let one strategy's exception abort the waterfall
     }
   }
 
-  console.error(`[feed] all strategies failed for ${feedUrl}`);
+  console.error(`[feed] all 5 strategies failed for ${feedUrl}`);
   return [];
 }
 
