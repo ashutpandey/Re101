@@ -1,4 +1,4 @@
-mport { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 const FEEDS = [
   { name: "BleepingComputer", url: "https://www.bleepingcomputer.com/feed/", color: "#a78bfa" },
@@ -17,109 +17,257 @@ const FEEDS = [
   { name: "Checkpoint Research", url: "https://research.checkpoint.com/feed/", color: "#e879f9" },
   { name: "Trend Micro", url: "https://www.trendmicro.com/en_us/research.rss", color: "#f97316" },
   { name: "Dark Reading", url: "https://www.darkreading.com/rss.xml", color: "#94a3b8" },
+  { name: "CrowdStrike Blog", url: "https://www.crowdstrike.com/blog/feed/", color: "#ef4444" },
+  { name: "SentinelOne", url: "https://www.sentinelone.com/blog/feed/", color: "#8b5cf6" },
+  { name: "Red Canary", url: "https://redcanary.com/feed/", color: "#f43f5e" },
+  { name: "CISA Advisories", url: "https://www.cisa.gov/cybersecurity-advisories/all.xml", color: "#0ea5e9" },
+  { name: "Huntress Labs", url: "https://www.huntress.com/blog/rss.xml", color: "#fb923c" },
+  { name: "Secureworks CTU", url: "https://www.secureworks.com/rss?feed=research", color: "#c084fc" },
+  { name: "NCC Group", url: "https://research.nccgroup.com/feed/", color: "#22d3ee" },
+  { name: "WithSecure Labs", url: "https://labs.withsecure.com/feed", color: "#a3e635" },
 ];
 
-const IOC_PATTERNS = {
-  ips: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g,
-  domains: /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|net|org|io|xyz|ru|cn|info|biz)\b/gi,
-  hashes_md5: /\b[a-fA-F0-9]{32}\b/g,
-  hashes_sha256: /\b[a-fA-F0-9]{64}\b/g,
-  cves: /CVE-\d{4}-\d{4,7}/gi,
-};
+// --- IOC REGEX PATTERNS ---
+// IP: strict word-boundary check, avoids matching inside URLs/version strings
+const RE_IP = /(?<![\/\.\w])(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?![\w\/\.])/g;
+const RE_DOMAIN = /\b(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.){1,}(?:com|net|org|io|xyz|ru|cn|info|biz|co|gov|edu|mil|mobi|app|dev|ai)\b/gi;
+const RE_MD5    = /\b[a-fA-F0-9]{32}\b/g;
+const RE_SHA256 = /\b[a-fA-F0-9]{64}\b/g;
+const RE_CVE    = /CVE-\d{4}-\d{4,7}/g;
+
+const PRIVATE_IP_RE = /^(10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.|255\.)/;
+
+const DOMAIN_SKIPLIST = new Set([
+  "google.com","microsoft.com","github.com","amazon.com","cloudflare.com",
+  "apple.com","mozilla.org","wikipedia.org","twitter.com","linkedin.com",
+  "youtube.com","facebook.com","w3.org","schema.org","example.com",
+]);
 
 const THREAT_KEYWORDS = [
-  "ransomware","zero-day","zeroday","exploit","backdoor","trojan","malware",
-  "apt","threat actor","campaign","vulnerability","CVE","botnet","c2","command and control",
-  "phishing","lateral movement","privilege escalation","persistence","exfiltration",
-  "cobalt strike","shellcode","rootkit","loader","stealer","infostealer",
+  // Malware types
+  "ransomware","wiper","trojan","backdoor","rootkit","bootkit","implant",
+  "loader","dropper","downloader","stealer","infostealer","keylogger",
+  "spyware","adware","formjacker","skimmer","web shell","webshell",
+  "cryptominer","cryptojacking","banking trojan","rat","remote access trojan",
+  // Named malware families / threat actors
+  "lockbit","blackcat","alphv","cl0p","clop","akira","blackbasta","hive",
+  "royal","play","cuba","lorenz","avoslocker","revil","darkside","conti",
+  "lazarus","apt28","apt29","apt41","apt40","turla","fin7","fin8","fin12",
+  "ta505","ta558","ta4903","scattered spider","lapsus","unc2452","cozy bear",
+  "fancy bear","sandworm","equation group","hafnium","volt typhoon","salt typhoon",
+  "cobalt strike","brute ratel","sliver","havoc","metasploit","covenant",
+  "mimikatz","impacket","bloodhound","sharphound","rubeus","kerbrute",
+  "nishang","powersploit","empire","crackmapexec","responder",
+  // Vulnerability/exploit terms
+  "zero-day","zeroday","exploit","exploit kit","exploit chain",
+  "remote code execution","rce","arbitrary code execution","privilege escalation",
+  "buffer overflow","use after free","heap spray","format string",
+  "sql injection","sqli","xss","cross-site scripting",
+  "ssrf","server-side request forgery","deserialization","xxe",
+  "path traversal","lfi","rfi","log4shell","proxylogon","proxyshell",
+  "follina","eternalblue","zerologon","printnightmare","spring4shell",
+  "spectre","meltdown","dirty pipe","polkit","looney tunables",
+  // MITRE ATT&CK tactics / techniques
+  "initial access","execution","persistence","defense evasion",
+  "credential access","discovery","lateral movement","collection","exfiltration",
+  "command and control","impact","phishing","spearphishing","vishing","smishing",
+  "living off the land","lolbas","lolbin","supply chain","typosquatting",
+  "watering hole","drive-by download","dll sideloading","dll hijacking",
+  "reflective dll","process injection","process hollowing","token impersonation",
+  "uac bypass","kerberoasting","pass the hash","pass the ticket","dcsync",
+  "credential dumping","lateral tool transfer","domain fronting","dns tunneling",
+  "dns hijacking","man in the middle","mitm","arp spoofing","bitlocker abuse",
+  // Infrastructure / ops
+  "apt","threat actor","campaign","intrusion set","threat group",
+  "c2","c&c","command and control","botnet","beacon","staging server",
+  "cobalt strike beacon","meterpreter","stager","payload",
+  "tor","onion","dark web","darknet","bulletproof hosting","fast flux","sinkhole",
+  // IOC/intel terms
+  "vulnerability","cve","patch tuesday","out-of-band patch",
+  "ioc","indicator of compromise","ttps","tactics techniques procedures",
+  "threat intelligence","attribution","malware","zero-day",
+  // Data & impact
+  "data breach","data leak","data theft","exfiltrated","exposed database",
+  "double extortion","triple extortion","ransom","decryptor",
+  "ics","scada","ot security","critical infrastructure",
+  "healthcare","financial sector","government","energy sector",
 ];
 
-// --- LOGIC FUNCTIONS ---
+// Normalize defanged IOCs and strip HTML
+function defang(text) {
+  return (text || "")
+    .replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, m => m.slice(9, -3))  // unwrap CDATA
+    .replace(/<[^>]+>/g, " ")          // strip HTML tags
+    .replace(/hxxps?:\/\//gi, "http://") // defanged URLs
+    .replace(/\[\.\]/g, ".")            // [.] -> .
+    .replace(/\(\.\)/g, ".")            // (.) -> .
+    .replace(/\[dot\]/gi, ".")          // [dot] -> .
+    .replace(/\(dot\)/gi, ".")          // (dot) -> .
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#\d+;/g, " ");
+}
 
+// --- SCORING ---
 function scoreArticle(title, description) {
-  const text = (title + " " + (description || "")).toLowerCase();
+  const text = defang((title || "") + " " + (description || "")).toLowerCase();
   let score = 0;
-  THREAT_KEYWORDS.forEach(kw => { if (text.includes(kw.toLowerCase())) score += 10; });
-  const cves = text.match(IOC_PATTERNS.cves) || [];
+  for (const kw of THREAT_KEYWORDS) {
+    if (text.includes(kw)) score += 7;
+  }
+  const cves = text.match(RE_CVE) || [];
   score += cves.length * 15;
   return Math.min(score, 100);
 }
 
+// --- IOC EXTRACTION ---
 function extractIOCs(text) {
-  const clean = (text || "").replace(/<[^>]+>/g, " ");
-  return {
-    ips: [...new Set((clean.match(IOC_PATTERNS.ips) || []).filter(ip => !ip.startsWith("10.") && !ip.startsWith("192.168") && !ip.startsWith("127.")))],
-    domains: [...new Set((clean.match(IOC_PATTERNS.domains) || []).slice(0, 5))],
-    hashes: [...new Set([...(clean.match(IOC_PATTERNS.hashes_md5) || []), ...(clean.match(IOC_PATTERNS.hashes_sha256) || [])])].slice(0, 3),
-    cves: [...new Set(clean.match(IOC_PATTERNS.cves) || [])],
-  };
+  const clean = defang(text);
+
+  const ips = [...new Set((clean.match(RE_IP) || []).filter(ip => !PRIVATE_IP_RE.test(ip)))];
+
+  const rawDomains = clean.match(new RegExp(RE_DOMAIN.source, RE_DOMAIN.flags)) || [];
+  const domains = [...new Set(rawDomains.filter(d =>
+    d.length >= 6 && !DOMAIN_SKIPLIST.has(d.toLowerCase())
+  ))].slice(0, 5);
+
+  const hashes = [...new Set([
+    ...(clean.match(new RegExp(RE_MD5.source, RE_MD5.flags)) || []),
+    ...(clean.match(new RegExp(RE_SHA256.source, RE_SHA256.flags)) || []),
+  ])].slice(0, 3);
+
+  const cves = [...new Set(clean.match(new RegExp(RE_CVE.source, RE_CVE.flags)) || [])];
+
+  return { ips, domains, hashes, cves };
 }
 
 function extractKeywords(text) {
-  const clean = (text || "").replace(/<[^>]+>/g, " ").toLowerCase();
-  return THREAT_KEYWORDS.filter(kw => clean.includes(kw.toLowerCase()));
+  const clean = defang(text).toLowerCase();
+  return THREAT_KEYWORDS.filter(kw => clean.includes(kw));
 }
 
-const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
-
-function isWithinTimeframe(dateStr, days = 7) {
+function isWithinTimeframe(dateStr, days) {
   if (!dateStr) return true;
   const pub = new Date(dateStr);
   if (isNaN(pub.getTime())) return true;
-  const diff = Date.now() - pub.getTime();
-  return diff <= (days * 24 * 60 * 60 * 1000);
+  return (Date.now() - pub.getTime()) <= days * 86400000;
 }
 
-// --- RELIABLE FETCH (Uses CORS Proxy + XML Parsing) ---
+// --- RSS FETCH ---
+// Primary: allorigins.win (returns JSON, handles encoding cleanly)
+// Fallback: corsproxy.io
 async function fetchRSSviaProxy(feedUrl) {
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), 12000);
   try {
-    // Swapping to corsproxy.io as it's more stable for 2026
-    const proxy = `https://corsproxy.io/?url=${encodeURIComponent(feedUrl)}`;
-    const res = await fetch(proxy);
-    const text = await res.text();
-    const parser = new DOMParser();
-    const xml = parser.parseFromString(text, "text/xml");
-    
-    // Convert XML to JSON structure compatible with your original code
-    const items = Array.from(xml.querySelectorAll("item, entry")).map(el => ({
-      title: el.querySelector("title")?.textContent || "",
-      link: el.querySelector("link")?.textContent || el.querySelector("link")?.getAttribute("href") || "",
-      description: el.querySelector("description")?.textContent || el.querySelector("summary")?.textContent || "",
-      pubDate: el.querySelector("pubDate")?.textContent || el.querySelector("published")?.textContent || "",
-    }));
+    const res = await fetch(
+      `https://api.allorigins.win/get?url=${encodeURIComponent(feedUrl)}`,
+      { signal: controller.signal }
+    );
+    clearTimeout(tid);
+    if (!res.ok) throw new Error(`allorigins HTTP ${res.status}`);
+    const json = await res.json();
+    if (!json.contents) throw new Error("empty contents");
+    return parseRSS(json.contents);
+  } catch (e1) {
+    clearTimeout(tid);
+    // Fallback
+    const c2 = new AbortController();
+    const tid2 = setTimeout(() => c2.abort(), 12000);
+    try {
+      // corsproxy.io expects the raw URL as the query string value — encode it
+      const res2 = await fetch(
+        `https://corsproxy.io/?${encodeURIComponent(feedUrl)}`,
+        { signal: c2.signal }
+      );
+      clearTimeout(tid2);
+      if (!res2.ok) throw new Error(`corsproxy HTTP ${res2.status}`);
+      const text = await res2.text();
+      return parseRSS(text);
+    } catch (e2) {
+      clearTimeout(tid2);
+      console.warn(`[feed] failed ${feedUrl} — primary: ${e1.message}, fallback: ${e2.message}`);
+      return [];
+    }
+  }
+}
 
-    return items;
-  } catch (e) {
-    console.error("Fetch error", e);
+function parseRSS(rawText) {
+  try {
+    if (!rawText || rawText.trim().toLowerCase().startsWith("<!doctype html")) return [];
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(rawText, "text/xml");
+    if (xml.querySelector("parsererror")) return [];
+
+    return Array.from(xml.querySelectorAll("item, entry"))
+      .map(el => {
+        // <link> in Atom: empty element with href; in RSS: text content
+        const linkEl = el.querySelector("link");
+        const link = linkEl
+          ? (linkEl.getAttribute("href") || linkEl.textContent || "").trim()
+          : "";
+
+        const description =
+          el.querySelector("description")?.textContent ||
+          el.querySelector("summary")?.textContent ||
+          el.querySelector("content")?.textContent ||
+          "";
+
+        const pubDate =
+          el.querySelector("pubDate")?.textContent ||
+          el.querySelector("published")?.textContent ||
+          el.querySelector("updated")?.textContent ||
+          "";
+
+        const title = el.querySelector("title")?.textContent?.trim() || "";
+        return { title, link: link.trim(), description: description.trim(), pubDate: pubDate.trim() };
+      })
+      .filter(item => item.title.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+// --- GitHub rule search ---
+// Key fix: build q param as a single encoded string (no + inside encodeURIComponent)
+async function githubCodeSearch(keywords, repoAndExt) {
+  const q = keywords.slice(0, 2).join(" ") + " " + repoAndExt;
+  if (!q.trim()) return [];
+  try {
+    const url = "https://api.github.com/search/code?q=" + encodeURIComponent(q) + "&per_page=3";
+    const res = await fetch(url, {
+      headers: { Accept: "application/vnd.github+json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.status === 403) return []; // rate limited
+    const data = await res.json();
+    return Array.isArray(data.items) ? data.items : [];
+  } catch {
     return [];
   }
 }
 
 async function searchSigmaRules(keywords) {
-  const query = keywords.slice(0, 2).join("+");
-  if (!query) return null;
-  const url = `https://api.github.com/search/code?q=${encodeURIComponent(query)}+repo:SigmaHQ/sigma+extension:yml&per_page=3`;
-  const res = await fetch(url, { headers: { Accept: "application/vnd.github+json" } });
-  const data = await res.json();
-  return data.items || [];
+  return githubCodeSearch(keywords, "repo:SigmaHQ/sigma extension:yml");
 }
 
 async function searchYARARules(keywords) {
-  const query = keywords.slice(0, 2).join("+");
-  if (!query) return null;
-  const url = `https://api.github.com/search/code?q=${encodeURIComponent(query)}+repo:Yara-Rules/rules+extension:yar&per_page=3`;
-  const res = await fetch(url, { headers: { Accept: "application/vnd.github+json" } });
-  const data = await res.json();
-  return data.items || [];
+  return githubCodeSearch(keywords, "repo:Yara-Rules/rules extension:yar");
 }
 
-async function fetchRuleContent(rawUrl) {
-  const res = await fetch(rawUrl);
+async function fetchRuleContent(htmlUrl) {
+  // github.com/user/repo/blob/main/path -> raw.githubusercontent.com/user/repo/main/path
+  const raw = htmlUrl
+    .replace("github.com", "raw.githubusercontent.com")
+    .replace("/blob/", "/");
+  const res = await fetch(raw, { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return await res.text();
 }
 
-// --- ORIGINAL UI COMPONENTS ---
+// --- UI COMPONENTS (structure unchanged) ---
 
 function ScoreBar({ score }) {
   const color = score >= 70 ? "#f87171" : score >= 40 ? "#fbbf24" : "#34d399";
@@ -157,11 +305,11 @@ function RuleModal({ article, onClose }) {
     async function load() {
       const kws = extractKeywords(article.title + " " + article.description);
       const [sigma, yara] = await Promise.all([
-        searchSigmaRules(kws).catch(() => []),
-        searchYARARules(kws).catch(() => []),
+        searchSigmaRules(kws),
+        searchYARARules(kws),
       ]);
-      setSigmaRules(sigma || []);
-      setYaraRules(yara || []);
+      setSigmaRules(sigma);
+      setYaraRules(yara);
       setLoading(false);
     }
     load();
@@ -170,9 +318,12 @@ function RuleModal({ article, onClose }) {
   async function loadContent(item, type) {
     setLoadingContent(true);
     setSelectedRule({ ...item, type });
-    const raw = item.html_url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/");
-    const content = await fetchRuleContent(raw).catch(() => "// Could not load content");
-    setRuleContent(content);
+    try {
+      const content = await fetchRuleContent(item.html_url);
+      setRuleContent(content);
+    } catch (e) {
+      setRuleContent(`// Could not load — ${e.message}\n// Check GitHub rate limit or open directly:\n// ${item.html_url}`);
+    }
     setLoadingContent(false);
   }
 
@@ -234,7 +385,7 @@ function ArticleCard({ article, source }) {
   const iocs = extractIOCs(article.description || "");
   const keywords = extractKeywords(article.title + " " + (article.description || ""));
   const score = scoreArticle(article.title, article.description || "");
-  const cleanDesc = (article.description || "").replace(/<[^>]+>/g, "").slice(0, 220);
+  const cleanDesc = defang(article.description || "").slice(0, 220);
 
   return (
     <>
@@ -273,14 +424,12 @@ function ArticleCard({ article, source }) {
   );
 }
 
-// --- MAIN PAGE (PARALLEL LOADING FIXED) ---
-
 export default function ThreatFeedPage() {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadedFeeds, setLoadedFeeds] = useState(0);
   const [filter, setFilter] = useState("all");
-  const [timeframe, setTimeframe] = useState("week"); // Toggle for Week vs Month
+  const [timeframe, setTimeframe] = useState("week");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("score");
   const [activeFeeds, setActiveFeeds] = useState(FEEDS.map(f => f.name));
@@ -291,10 +440,7 @@ export default function ThreatFeedPage() {
     setLoading(true);
     setArticles([]);
     setLoadedFeeds(0);
-    
     const activeSources = FEEDS.filter(f => activeFeeds.includes(f.name));
-
-    // Fast parallel fetch
     const results = await Promise.all(activeSources.map(async (feed) => {
       try {
         const items = await fetchRSSviaProxy(feed.url);
@@ -306,12 +452,11 @@ export default function ThreatFeedPage() {
         }));
         setLoadedFeeds(prev => prev + 1);
         return processed;
-      } catch (e) {
+      } catch {
         setLoadedFeeds(prev => prev + 1);
         return [];
       }
     }));
-
     setArticles(results.flat());
     setLastRefresh(new Date().toLocaleTimeString());
     setLoading(false);
@@ -320,7 +465,7 @@ export default function ThreatFeedPage() {
   useEffect(() => { loadFeeds(); }, []);
 
   const filtered = articles
-    .filter(a => timeframe === "week" ? isWithinTimeframe(a.pubDate, 7) : isWithinTimeframe(a.pubDate, 30))
+    .filter(a => isWithinTimeframe(a.pubDate, timeframe === "week" ? 7 : 30))
     .filter(a => {
       if (filter === "high") return a._score >= 70;
       if (filter === "medium") return a._score >= 40 && a._score < 70;
@@ -332,7 +477,7 @@ export default function ThreatFeedPage() {
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", minHeight: "calc(100vh - 56px)", background: "#0d1117" }}>
-      {/* Sidebar (ORIGINAL UI) */}
+      {/* Sidebar */}
       <div style={{ background: "rgba(255,255,255,0.01)", borderRight: "1px solid rgba(255,255,255,0.06)", padding: 16 }}>
         <div style={{ fontSize: 10, color: "#3d444d", textTransform: "uppercase", letterSpacing: 2, marginBottom: 12, fontFamily: "Fira Code" }}>Sources</div>
         {(showAllFeeds ? FEEDS : FEEDS.slice(0, 8)).map(feed => (
@@ -343,38 +488,54 @@ export default function ThreatFeedPage() {
           </div>
         ))}
         {FEEDS.length > 8 && (
-          <button onClick={() => setShowAllFeeds(p => !p)} style={{ width: "100%", background: "none", border: "1px solid rgba(255,255,255,0.06)", color: "#6e7681", borderRadius: 6, padding: "5px 0", cursor: "pointer", fontSize: 10, fontFamily: "Fira Code", marginTop: 4 }}>{showAllFeeds ? "▲ Show less" : `▼ +${FEEDS.length - 8} more`}</button>
+          <button onClick={() => setShowAllFeeds(p => !p)} style={{ width: "100%", background: "none", border: "1px solid rgba(255,255,255,0.06)", color: "#6e7681", borderRadius: 6, padding: "5px 0", cursor: "pointer", fontSize: 10, fontFamily: "Fira Code", marginTop: 4 }}>
+            {showAllFeeds ? "▲ Show less" : `▼ +${FEEDS.length - 8} more`}
+          </button>
         )}
         <div style={{ fontSize: 10, color: "#3d444d", textTransform: "uppercase", letterSpacing: 2, margin: "20px 0 12px", fontFamily: "Fira Code" }}>Stats</div>
         <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: 12 }}>
-          {[{ label: "Total", val: articles.length, color: "#e2e8f0" }, { label: "High", val: articles.filter(a => a._score >= 70).length, color: "#ff4d6d" }].map((s, i) => (
+          {[
+            { label: "Total", val: articles.length, color: "#e2e8f0" },
+            { label: "High", val: articles.filter(a => a._score >= 70).length, color: "#ff4d6d" },
+            { label: "Medium", val: articles.filter(a => a._score >= 40 && a._score < 70).length, color: "#fbbf24" },
+            { label: "Sources", val: activeFeeds.length, color: "#00d4ff" },
+          ].map((s, i) => (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ fontSize: 11, color: "#3d444d", fontFamily: "Fira Code" }}>{s.label}</span>
               <span style={{ fontSize: 11, color: s.color, fontWeight: 700, fontFamily: "Fira Code" }}>{s.val}</span>
             </div>
           ))}
+          {lastRefresh && <div style={{ fontSize: 10, color: "#1e2d40", fontFamily: "Fira Code", marginTop: 4 }}>↺ {lastRefresh}</div>}
         </div>
       </div>
 
-      {/* Main Content (ORIGINAL UI) */}
+      {/* Main */}
       <div style={{ padding: 20 }}>
         <div style={{ display: "flex", gap: 10, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ flex: 1, minWidth: 200, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "#c9d1d9", borderRadius: 8, padding: "8px 14px", fontSize: 12, outline: "none", fontFamily: "Fira Code" }} />
-          
-          {/* Week/Month Toggle */}
           <div style={{ display: "flex", gap: 4 }}>
-            {["week", "month"].map(v => (
+            {["all","high","medium","low"].map(v => (
+              <button key={v} onClick={() => setFilter(v)} style={{ background: filter === v ? "rgba(255,77,109,0.08)" : "rgba(255,255,255,0.03)", border: `1px solid ${filter === v ? "rgba(255,77,109,0.3)" : "rgba(255,255,255,0.06)"}`, color: filter === v ? "#ff4d6d" : "#6e7681", borderRadius: 6, padding: "7px 12px", cursor: "pointer", fontSize: 11, fontFamily: "Fira Code", textTransform: "capitalize" }}>{v}</button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[["score","Score"],["date","Date"]].map(([v, label]) => (
+              <button key={v} onClick={() => setSortBy(v)} style={{ background: sortBy === v ? "rgba(0,212,255,0.08)" : "rgba(255,255,255,0.03)", border: `1px solid ${sortBy === v ? "rgba(0,212,255,0.3)" : "rgba(255,255,255,0.06)"}`, color: sortBy === v ? "#00d4ff" : "#6e7681", borderRadius: 6, padding: "7px 12px", cursor: "pointer", fontSize: 11, fontFamily: "Fira Code" }}>{label}</button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {["week","month"].map(v => (
               <button key={v} onClick={() => setTimeframe(v)} style={{ background: timeframe === v ? "rgba(0,153,255,0.08)" : "rgba(255,255,255,0.03)", border: `1px solid ${timeframe === v ? "rgba(0,153,255,0.3)" : "rgba(255,255,255,0.06)"}`, color: timeframe === v ? "#0099ff" : "#6e7681", borderRadius: 6, padding: "7px 12px", cursor: "pointer", fontSize: 11, fontFamily: "Fira Code", textTransform: "capitalize" }}>{v}</button>
             ))}
           </div>
-
           <button onClick={loadFeeds} disabled={loading} style={{ background: loading ? "rgba(255,255,255,0.02)" : "rgba(0,212,255,0.06)", border: "1px solid rgba(0,212,255,0.2)", color: "#00d4ff", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "Fira Code" }}>
-            {loading ? `Loading ${loadedFeeds}...` : "⟳ Refresh"}
+            {loading ? `⟳ ${loadedFeeds}/${activeFeeds.length}` : "⟳ Refresh"}
           </button>
         </div>
-
         {loading && articles.length === 0 ? (
           <div style={{ textAlign: "center", padding: 60, color: "#3d444d", fontFamily: "Fira Code" }}>⟳ Loading Intel Feeds...</div>
+        ) : filtered.length === 0 && !loading ? (
+          <div style={{ textAlign: "center", padding: 60, color: "#3d444d", fontFamily: "Fira Code" }}>No articles match current filters</div>
         ) : (
           filtered.map((a, i) => <ArticleCard key={i} article={a} source={a._source} />)
         )}
