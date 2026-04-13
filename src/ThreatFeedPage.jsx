@@ -156,42 +156,93 @@ function isWithinTimeframe(dateStr, days) {
 }
 
 // --- RSS FETCH ---
-// Primary: allorigins.win (returns JSON, handles encoding cleanly)
-// Fallback: corsproxy.io
-async function fetchRSSviaProxy(feedUrl) {
-  const controller = new AbortController();
-  const tid = setTimeout(() => controller.abort(), 12000);
+// Waterfall through 4 different strategies. Each has different blocking profiles
+// so what allorigins blocks, rss2json or feedproxy often won't, and vice versa.
+
+async function timedFetch(url, opts = {}, ms = 10000) {
+  const ac = new AbortController();
+  const tid = setTimeout(() => ac.abort(), ms);
   try {
-    const res = await fetch(
-      `https://api.allorigins.win/get?url=${encodeURIComponent(feedUrl)}`,
-      { signal: controller.signal }
-    );
+    const res = await fetch(url, { ...opts, signal: ac.signal });
     clearTimeout(tid);
-    if (!res.ok) throw new Error(`allorigins HTTP ${res.status}`);
-    const json = await res.json();
-    if (!json.contents) throw new Error("empty contents");
-    return parseRSS(json.contents);
-  } catch (e1) {
+    return res;
+  } catch (e) {
     clearTimeout(tid);
-    // Fallback
-    const c2 = new AbortController();
-    const tid2 = setTimeout(() => c2.abort(), 12000);
+    throw e;
+  }
+}
+
+// Strategy A: rss2json.com — returns clean JSON, works for most feeds
+// Free tier: 1 req/sec, no key needed for public feeds
+async function tryRss2Json(feedUrl) {
+  const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&count=50`;
+  const res = await timedFetch(url);
+  if (!res.ok) throw new Error(`rss2json ${res.status}`);
+  const data = await res.json();
+  if (data.status !== "ok") throw new Error(`rss2json status: ${data.status} — ${data.message || ""}`);
+  // Normalize to our internal shape
+  return (data.items || []).map(item => ({
+    title: item.title || "",
+    link: item.link || item.guid || "",
+    description: item.description || item.content || "",
+    pubDate: item.pubDate || "",
+  }));
+}
+
+// Strategy B: allorigins.win — wraps raw XML in JSON
+async function tryAllOrigins(feedUrl) {
+  const url = `https://api.allorigins.win/get?url=${encodeURIComponent(feedUrl)}`;
+  const res = await timedFetch(url);
+  if (!res.ok) throw new Error(`allorigins ${res.status}`);
+  const json = await res.json();
+  // allorigins returns 200 but sets status 0 or returns HTML for blocked URLs
+  if (!json.contents || json.contents.trim().toLowerCase().startsWith("<!doctype html"))
+    throw new Error("allorigins blocked or empty");
+  return parseRSS(json.contents);
+}
+
+// Strategy C: corsproxy.io — raw proxy, returns XML directly
+async function tryCorsproxy(feedUrl) {
+  const url = `https://corsproxy.io/?${encodeURIComponent(feedUrl)}`;
+  const res = await timedFetch(url);
+  if (!res.ok) throw new Error(`corsproxy ${res.status}`);
+  const text = await res.text();
+  if (text.trim().toLowerCase().startsWith("<!doctype html"))
+    throw new Error("corsproxy returned HTML");
+  return parseRSS(text);
+}
+
+// Strategy D: thingproxy.freeboard.io — another open CORS proxy
+async function tryThingProxy(feedUrl) {
+  const url = `https://thingproxy.freeboard.io/fetch/${feedUrl}`;
+  const res = await timedFetch(url);
+  if (!res.ok) throw new Error(`thingproxy ${res.status}`);
+  const text = await res.text();
+  if (text.trim().toLowerCase().startsWith("<!doctype html"))
+    throw new Error("thingproxy returned HTML");
+  return parseRSS(text);
+}
+
+async function fetchRSSviaProxy(feedUrl) {
+  const strategies = [
+    ["rss2json",   () => tryRss2Json(feedUrl)],
+    ["allorigins", () => tryAllOrigins(feedUrl)],
+    ["corsproxy",  () => tryCorsproxy(feedUrl)],
+    ["thingproxy", () => tryThingProxy(feedUrl)],
+  ];
+
+  for (const [name, fn] of strategies) {
     try {
-      // corsproxy.io expects the raw URL as the query string value — encode it
-      const res2 = await fetch(
-        `https://corsproxy.io/?${encodeURIComponent(feedUrl)}`,
-        { signal: c2.signal }
-      );
-      clearTimeout(tid2);
-      if (!res2.ok) throw new Error(`corsproxy HTTP ${res2.status}`);
-      const text = await res2.text();
-      return parseRSS(text);
-    } catch (e2) {
-      clearTimeout(tid2);
-      console.warn(`[feed] failed ${feedUrl} — primary: ${e1.message}, fallback: ${e2.message}`);
-      return [];
+      const items = await fn();
+      if (items && items.length > 0) return items;
+      // Got 0 items — could be a successful empty response or silent block, try next
+    } catch (e) {
+      console.warn(`[${name}] ${new URL(feedUrl).hostname}: ${e.message}`);
     }
   }
+
+  console.error(`[feed] all strategies failed for ${feedUrl}`);
+  return [];
 }
 
 function parseRSS(rawText) {
