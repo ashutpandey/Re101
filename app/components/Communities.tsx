@@ -1,34 +1,71 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Community } from '@/lib/supabase';
+import { useState } from 'react';
+
+interface Community {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  platform_url: string;
+  members_count: number;
+  tags: string[];
+  type: string;
+  active: boolean;
+}
+
+// Sample communities data
+const SAMPLE_COMMUNITIES: Community[] = [
+  {
+    id: '1',
+    name: 'RE101 Discord Community',
+    description: 'Active community of malware analysts and reverse engineers sharing techniques, tools, and samples.',
+    category: 'Reverse Engineering',
+    platform_url: 'https://discord.gg/example',
+    members_count: 5000,
+    tags: ['discord', 'malware', 'community'],
+    type: 'Discord',
+    active: true,
+  },
+  {
+    id: '2',
+    name: 'SANS Institute Community',
+    description: 'Professional security training and community forums for threat intelligence and incident response.',
+    category: 'General Security',
+    platform_url: 'https://www.sans.org',
+    members_count: 50000,
+    tags: ['training', 'certification', 'security'],
+    type: 'Forum',
+    active: true,
+  },
+  {
+    id: '3',
+    name: 'OWASP on Slack',
+    description: 'Open Web Application Security Project community discussing web security and best practices.',
+    category: 'Web Security',
+    platform_url: 'https://owasp.slack.com',
+    members_count: 15000,
+    tags: ['web-security', 'owasp', 'slack'],
+    type: 'Slack',
+    active: true,
+  },
+  {
+    id: '4',
+    name: 'Malware Analysis GitHub Discussions',
+    description: 'Technical discussions on malware analysis, IoCs, and open-source tools.',
+    category: 'Malware Analysis',
+    platform_url: 'https://github.com/topics/malware-analysis',
+    members_count: 8000,
+    tags: ['github', 'malware', 'open-source'],
+    type: 'GitHub',
+    active: true,
+  },
+];
 
 export default function Communities() {
-  const [communities, setCommunities] = useState<Community[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [communities] = useState<Community[]>(SAMPLE_COMMUNITIES);
   const [selectedType, setSelectedType] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-
-  useEffect(() => {
-    const fetchCommunities = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch('/api/communities');
-        if (!response.ok) throw new Error('Failed to fetch communities');
-        const data = await response.json();
-        setCommunities(data);
-        setError('');
-      } catch (err) {
-        setError('Failed to load communities. Please try again.');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchCommunities();
-  }, []);
 
   const types = Array.from(new Set(communities.map((c) => c.type))).sort();
   const filteredCommunities = communities.filter((community) => {
@@ -120,38 +157,14 @@ export default function Communities() {
           </div>
         </div>
 
-        {/* Loading State */}
-        {loading && (
-          <div style={{ textAlign: 'center', padding: '3rem 0', color: '#a0a0a0' }}>
-            <p style={{ fontSize: '1.1rem' }}>Loading communities...</p>
-          </div>
-        )}
-
-        {/* Error State */}
-        {error && (
-          <div
-            style={{
-              background: '#3a1a1a',
-              border: '1px solid #ff4444',
-              padding: '1rem',
-              borderRadius: '0.5rem',
-              marginBottom: '2rem',
-              color: '#ff6b6b',
-            }}
-          >
-            {error}
-          </div>
-        )}
-
         {/* Communities Grid */}
-        {!loading && !error && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-              gap: '1.5rem',
-            }}
-          >
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+            gap: '1.5rem',
+          }}
+        >
             {filteredCommunities.map((community) => (
               <div
                 key={community.id}
@@ -226,48 +239,8 @@ export default function Communities() {
                       >
                         {tag}
                       </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Join Button */}
-                <a
-                  href={community.platform_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    padding: '0.75rem 1rem',
-                    borderRadius: '0.4rem',
-                    background: getTypeColor(community.type),
-                    color: '#000',
-                    textDecoration: 'none',
-                    textAlign: 'center',
-                    fontSize: '0.9rem',
-                    fontWeight: '600',
-                    transition: 'all 0.2s',
-                    border: 'none',
-                    cursor: 'pointer',
-                  }}
-                  onMouseOver={(e) => {
-                    (e.currentTarget as HTMLElement).style.opacity = '0.8';
-                  }}
-                  onMouseOut={(e) => {
-                    (e.currentTarget as HTMLElement).style.opacity = '1';
-                  }}
-                >
-                  Join Community →
-                </a>
-              </div>
             ))}
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!loading && !error && filteredCommunities.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '3rem 0', color: '#a0a0a0' }}>
-            <p>No communities found matching that filter.</p>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );

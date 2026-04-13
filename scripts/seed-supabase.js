@@ -89,7 +89,7 @@ async function seedTools() {
       description: 'NSA free disassembler and decompiler. The gold standard for free RE.',
       category: 'static',
       url: 'https://ghidra-sre.org/',
-      difficulty: 'Essential',
+      difficulty: 'Beginner',
       tags: ['disassembly', 'decompiler', 'free'],
       rating: 4.9,
       reviews_count: 2500,
@@ -99,7 +99,7 @@ async function seedTools() {
       description: 'The industry-standard disassembler. Free version handles 32-bit x86 and 64-bit x86.',
       category: 'static',
       url: 'https://hex-rays.com/ida-free/',
-      difficulty: 'Essential',
+      difficulty: 'Intermediate',
       tags: ['disassembly', 'industry-standard'],
       rating: 4.8,
       reviews_count: 3000,
@@ -109,7 +109,7 @@ async function seedTools() {
       description: 'Free, open-source Windows debugger for 32/64-bit. The go-to for malware debugging.',
       category: 'dynamic',
       url: 'https://x64dbg.com/',
-      difficulty: 'Essential',
+      difficulty: 'Intermediate',
       tags: ['debugger', 'windows', 'dynamic-analysis'],
       rating: 4.7,
       reviews_count: 1800,
@@ -119,7 +119,7 @@ async function seedTools() {
       description: 'Standard for network traffic capture and analysis. Captures C2 traffic and identifies protocols.',
       category: 'dynamic',
       url: 'https://www.wireshark.org/',
-      difficulty: 'Essential',
+      difficulty: 'Beginner',
       tags: ['network', 'pcap', 'traffic-analysis'],
       rating: 4.8,
       reviews_count: 3500,
@@ -129,7 +129,7 @@ async function seedTools() {
       description: 'Multi-engine scan + IOC relationships. Essential for attribution and threat intelligence.',
       category: 'intel',
       url: 'https://www.virustotal.com/',
-      difficulty: 'Essential',
+      difficulty: 'Advanced',
       tags: ['ioc-lookup', 'threat-intel', 'malware-samples'],
       rating: 4.9,
       reviews_count: 5000,
@@ -161,6 +161,17 @@ async function seedTools() {
 }
 
 async function seedBlogs() {
+  // Fetch people IDs to use as authors
+  const { data: people } = await supabase
+    .from('people')
+    .select('id')
+    .limit(5);
+
+  if (!people || people.length === 0) {
+    console.log('ℹ Skipping blogs - no people found');
+    return;
+  }
+
   const blogs = [
     {
       title: 'Introduction to Reverse Engineering Malware',
@@ -170,6 +181,7 @@ async function seedBlogs() {
       published: true,
       likes_count: 350,
       views_count: 5000,
+      author_idx: 0,
     },
     {
       title: 'Threat Intelligence: Tracking Ransomware Operations',
@@ -179,6 +191,7 @@ async function seedBlogs() {
       published: true,
       likes_count: 280,
       views_count: 4200,
+      author_idx: 1,
     },
     {
       title: 'Detection Engineering Best Practices',
@@ -188,6 +201,7 @@ async function seedBlogs() {
       published: true,
       likes_count: 420,
       views_count: 6500,
+      author_idx: 2,
     },
     {
       title: 'Network Analysis with Wireshark and Zeek',
@@ -197,17 +211,19 @@ async function seedBlogs() {
       published: true,
       likes_count: 310,
       views_count: 4800,
+      author_idx: 3,
     },
   ];
 
   for (const blog of blogs) {
+    const authorId = people[blog.author_idx % people.length].id;
     const { error } = await supabase
       .from('blogs')
       .insert([
         {
           title: blog.title,
           content: blog.content,
-          author_id: '00000000-0000-0000-0000-000000000000',
+          author_id: authorId,
           category: blog.category,
           tags: blog.tags,
           published: blog.published,
@@ -225,71 +241,8 @@ async function seedBlogs() {
 }
 
 async function seedCommunities() {
-  const communities = [
-    {
-      name: 'RE101 Discord Community',
-      description: 'Active community of malware analysts and reverse engineers sharing techniques, tools, and samples.',
-      category: 'Reverse Engineering',
-      platform_url: 'https://discord.gg/example',
-      members_count: 5000,
-      tags: ['discord', 'malware', 'community'],
-      type: 'discord',
-      active: true,
-    },
-    {
-      name: 'SANS Institute Community',
-      description: 'Professional security training and community forums for threat intelligence and incident response.',
-      category: 'General Security',
-      platform_url: 'https://www.sans.org',
-      members_count: 50000,
-      tags: ['training', 'certification', 'security'],
-      type: 'forum',
-      active: true,
-    },
-    {
-      name: 'OWASP on Slack',
-      description: 'Open Web Application Security Project community discussing web security and best practices.',
-      category: 'Web Security',
-      platform_url: 'https://owasp.slack.com',
-      members_count: 15000,
-      tags: ['web-security', 'owasp', 'slack'],
-      type: 'slack',
-      active: true,
-    },
-    {
-      name: 'Malware Analysis GitHub Discussions',
-      description: 'Technical discussions on malware analysis, IoCs, and open-source tools.',
-      category: 'Malware Analysis',
-      platform_url: 'https://github.com/topics/malware-analysis',
-      members_count: 8000,
-      tags: ['github', 'malware', 'open-source'],
-      type: 'github',
-      active: true,
-    },
-  ];
-
-  for (const community of communities) {
-    const { error } = await supabase
-      .from('communities')
-      .insert([
-        {
-          name: community.name,
-          description: community.description,
-          category: community.category,
-          platform_url: community.platform_url,
-          members_count: community.members_count,
-          tags: community.tags,
-          type: community.type,
-          active: community.active,
-        },
-      ]);
-
-    if (error) {
-      console.error(`Error inserting community ${community.name}:`, error);
-    } else {
-      console.log(`✓ Inserted community: ${community.name}`);
-    }
-  }
+  // Static sample communities for display
+  console.log('ℹ Communities are provided as static samples in the UI');
 }
 
 async function main() {
