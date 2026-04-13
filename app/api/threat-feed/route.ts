@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import connectDB from '@/lib/db';
-import { parseThreatFeeds } from '@/lib/rss-parser';
 import { CACHE_TTL } from '@/lib/constants';
+
+// In-memory cache for when MongoDB is unavailable
+let memoryCache: {
+  articles?: any[];
+  cachedAt?: Date;
+} = {};
 
 const FEEDS = [
   { name: "BleepingComputer", url: "https://www.bleepingcomputer.com/feed/", color: "#a78bfa" },
@@ -61,15 +65,12 @@ async function fetchRSSviaProxy(feedUrl: string) {
 
 export async function GET(request: NextRequest) {
   try {
-    const db = await connectDB();
-    const threatsCollection = db.collection('threat_articles');
-    
-    // Check cache
-    const cached = await threatsCollection.findOne({ _id: 'cache' });
     const now = new Date();
     
-    if (cached && cached.cachedAt && (now.getTime() - cached.cachedAt.getTime()) < CACHE_TTL) {
-      return NextResponse.json(cached.articles || []);
+    // Try to use memory cache first
+    if (memoryCache.articles && memoryCache.cachedAt && 
+        (now.getTime() - memoryCache.cachedAt.getTime()) < CACHE_TTL) {
+      return NextResponse.json(memoryCache.articles);
     }
     
     // Fetch fresh articles
@@ -91,21 +92,42 @@ export async function GET(request: NextRequest) {
     
     const allArticles = results.flat();
     
-    // Cache in MongoDB
-    await threatsCollection.updateOne(
-      { _id: 'cache' },
-      {
-        $set: {
-          articles: allArticles,
-          cachedAt: now,
+    // Update memory cache
+    memoryCache = {
+      articles: allArticles,
+      cachedAt: now,
+    };
+    
+    // Try to cache in MongoDB if available
+    try {
+      const connectDB = (await import('@/lib/db')).default;
+      const db = await connectDB();
+      const threatsCollection = db.collection('threat_articles');
+      
+      await threatsCollection.updateOne(
+        { _id: 'cache' },
+        {
+          $set: {
+            articles: allArticles,
+            cachedAt: now,
+          },
         },
-      },
-      { upsert: true }
-    );
+        { upsert: true }
+      );
+
+    } catch (mongoError) {
+      // MongoDB unavailable - memory cache will handle this
+    }
     
     return NextResponse.json(allArticles);
   } catch (error: any) {
     console.error('Threat feed API error:', error);
+    
+    // Return cached data even on error if available
+    if (memoryCache.articles && memoryCache.articles.length > 0) {
+      return NextResponse.json(memoryCache.articles);
+    }
+    
     return NextResponse.json(
       { error: 'Failed to fetch threat feed', details: error.message },
       { status: 500 }
